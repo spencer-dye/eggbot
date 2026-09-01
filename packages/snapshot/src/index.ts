@@ -4,6 +4,7 @@ import {
   snapshotId,
   type LeagueId,
   type LeagueSnapshot,
+  type SnapshotIntegrityWarning,
   type SnapshotId,
   type TeamSnapshot,
 } from '@eggbot/core';
@@ -55,61 +56,86 @@ export class LeagueSnapshotService {
   ): Promise<LeagueSnapshot> {
     validateOptions(options);
     const captureStartedAt = this.#timestamp('captureStartedAt');
+    const leaguePromise = read(
+      'LEAGUE_READ_FAILED',
+      String(options.leagueId),
+      () => this.#reader.getLeague(options.leagueId),
+    );
+    const teamsPromise = read(
+      'TEAMS_READ_FAILED',
+      String(options.leagueId),
+      () => this.#reader.getTeams(options.leagueId),
+    );
+    const teamSnapshotsPromise = teamsPromise.then((teams) =>
+      mapWithConcurrency(
+        teams,
+        options.teamReadConcurrency ?? 4,
+        async (team): Promise<TeamSnapshot> => {
+          const [roster, lineup] = await Promise.all([
+            read('ROSTER_READ_FAILED', String(team.id), () =>
+              this.#reader.getRoster(team.id),
+            ),
+            read('LINEUP_READ_FAILED', String(team.id), () =>
+              this.#reader.getLineup(team.id, options.scoringPeriod),
+            ),
+          ]);
+          return { team, roster, lineup };
+        },
+      ),
+    );
+    const standingsPromise = read(
+      'STANDINGS_READ_FAILED',
+      String(options.leagueId),
+      () => this.#reader.getStandings(options.leagueId),
+    );
+    const matchupsPromise = read(
+      'MATCHUPS_READ_FAILED',
+      options.scoringPeriod,
+      () => this.#reader.getMatchups(options.leagueId, options.scoringPeriod),
+    );
+    const freeAgentsPromise = read(
+      'FREE_AGENTS_READ_FAILED',
+      String(options.leagueId),
+      () =>
+        this.#reader.getAvailablePlayers(options.leagueId, {
+          availability: 'free-agent',
+          limit: options.freeAgentLimit,
+        }),
+    );
+    const waiversPromise = read(
+      'WAIVERS_READ_FAILED',
+      String(options.leagueId),
+      () =>
+        this.#reader.getAvailablePlayers(options.leagueId, {
+          availability: 'waivers',
+          limit: options.waiverLimit,
+        }),
+    );
+    const transactionsPromise = read(
+      'TRANSACTIONS_READ_FAILED',
+      String(options.leagueId),
+      () =>
+        this.#reader.getTransactions(options.leagueId, {
+          limit: options.transactionLimit,
+        }),
+    );
     const [
       league,
-      teams,
+      teamSnapshots,
       standings,
       matchups,
       freeAgents,
       waivers,
       transactions,
     ] = await Promise.all([
-      read('LEAGUE_READ_FAILED', String(options.leagueId), () =>
-        this.#reader.getLeague(options.leagueId),
-      ),
-      read('TEAMS_READ_FAILED', String(options.leagueId), () =>
-        this.#reader.getTeams(options.leagueId),
-      ),
-      read('STANDINGS_READ_FAILED', String(options.leagueId), () =>
-        this.#reader.getStandings(options.leagueId),
-      ),
-      read('MATCHUPS_READ_FAILED', options.scoringPeriod, () =>
-        this.#reader.getMatchups(options.leagueId, options.scoringPeriod),
-      ),
-      read('FREE_AGENTS_READ_FAILED', String(options.leagueId), () =>
-        this.#reader.getAvailablePlayers(options.leagueId, {
-          availability: 'free-agent',
-          limit: options.freeAgentLimit,
-        }),
-      ),
-      read('WAIVERS_READ_FAILED', String(options.leagueId), () =>
-        this.#reader.getAvailablePlayers(options.leagueId, {
-          availability: 'waivers',
-          limit: options.waiverLimit,
-        }),
-      ),
-      read('TRANSACTIONS_READ_FAILED', String(options.leagueId), () =>
-        this.#reader.getTransactions(options.leagueId, {
-          limit: options.transactionLimit,
-        }),
-      ),
+      leaguePromise,
+      teamSnapshotsPromise,
+      standingsPromise,
+      matchupsPromise,
+      freeAgentsPromise,
+      waiversPromise,
+      transactionsPromise,
     ]);
-
-    const teamSnapshots = await mapWithConcurrency(
-      teams,
-      options.teamReadConcurrency ?? 4,
-      async (team): Promise<TeamSnapshot> => {
-        const [roster, lineup] = await Promise.all([
-          read('ROSTER_READ_FAILED', String(team.id), () =>
-            this.#reader.getRoster(team.id),
-          ),
-          read('LINEUP_READ_FAILED', String(team.id), () =>
-            this.#reader.getLineup(team.id, options.scoringPeriod),
-          ),
-        ]);
-        return { team, roster, lineup };
-      },
-    );
     const capturedAt = this.#timestamp('capturedAt');
     const result: LeagueSnapshot = {
       id: this.#idFactory(),
@@ -126,9 +152,12 @@ export class LeagueSnapshotService {
         waivers: bounded(waivers, options.waiverLimit),
       },
       recentTransactions: bounded(transactions, options.transactionLimit),
+      integrityWarnings: [],
     };
-    validateSnapshot(result, options.leagueId);
-    return result;
+    return {
+      ...result,
+      integrityWarnings: validateSnapshot(result, options.leagueId),
+    };
   }
 
   #timestamp(resource: string): string {
@@ -217,7 +246,11 @@ function validateOptions(options: LeagueSnapshotCaptureOptions): void {
   }
 }
 
-function validateSnapshot(snapshot: LeagueSnapshot, leagueId: LeagueId): void {
+function validateSnapshot(
+  snapshot: LeagueSnapshot,
+  leagueId: LeagueId,
+): readonly SnapshotIntegrityWarning[] {
+  const warnings: SnapshotIntegrityWarning[] = [];
   if (snapshot.league.id !== leagueId) invalid('LEAGUE_ID_MISMATCH', 'league');
   if (Date.parse(snapshot.capturedAt) < Date.parse(snapshot.captureStartedAt)) {
     invalid('CAPTURE_TIME_REVERSED', 'capturedAt');
@@ -227,6 +260,13 @@ function validateSnapshot(snapshot: LeagueSnapshot, leagueId: LeagueId): void {
     'DUPLICATE_TEAM',
     'teams',
   );
+  if (
+    snapshot.league.settings.teamCount !== undefined &&
+    snapshot.teams.length !== snapshot.league.settings.teamCount
+  ) {
+    invalid('TEAM_COUNT_MISMATCH', 'teams');
+  }
+  const rosterOwners = new Map<string, string>();
   for (const { team, roster, lineup } of snapshot.teams) {
     if (team.leagueId !== leagueId) invalid('TEAM_LEAGUE_MISMATCH', team.id);
     if (roster.teamId !== team.id) invalid('ROSTER_TEAM_MISMATCH', team.id);
@@ -239,6 +279,13 @@ function validateSnapshot(snapshot: LeagueSnapshot, leagueId: LeagueId): void {
       'DUPLICATE_ROSTER_PLAYER',
       team.id,
     );
+    for (const playerId of rostered) {
+      const owner = rosterOwners.get(playerId);
+      if (owner !== undefined && owner !== team.id) {
+        invalid('DUPLICATE_ROSTER_OWNERSHIP', playerId);
+      }
+      rosterOwners.set(playerId, team.id);
+    }
     unique(
       lineup.assignments.map(({ slotId }) => slotId),
       'DUPLICATE_LINEUP_SLOT',
@@ -250,7 +297,7 @@ function validateSnapshot(snapshot: LeagueSnapshot, leagueId: LeagueId): void {
       }
     }
   }
-  unique(
+  const standingTeamIds = unique(
     snapshot.standings.map(({ teamId }) => teamId),
     'DUPLICATE_STANDING',
     'standings',
@@ -259,6 +306,9 @@ function validateSnapshot(snapshot: LeagueSnapshot, leagueId: LeagueId): void {
     if (!teamIds.has(standing.teamId)) {
       invalid('UNKNOWN_STANDING_TEAM', standing.teamId);
     }
+  }
+  if (standingTeamIds.size !== teamIds.size) {
+    invalid('STANDINGS_TEAM_COUNT_MISMATCH', 'standings');
   }
   for (const matchup of snapshot.matchups) {
     if (matchup.scoringPeriod !== snapshot.scoringPeriod) {
@@ -294,10 +344,29 @@ function validateSnapshot(snapshot: LeagueSnapshot, leagueId: LeagueId): void {
     if (waiverIds.has(playerId)) {
       invalid('PLAYER_POOL_OVERLAP', playerId);
     }
+    if (rosterOwners.has(playerId)) {
+      warnings.push({
+        code: 'PLAYER_POOL_ROSTER_OVERLAP',
+        severity: 'observation-race',
+        playerId,
+        pool: 'free-agent',
+      });
+    }
+  }
+  for (const playerId of waiverIds) {
+    if (rosterOwners.has(playerId)) {
+      warnings.push({
+        code: 'PLAYER_POOL_ROSTER_OVERLAP',
+        severity: 'observation-race',
+        playerId,
+        pool: 'waivers',
+      });
+    }
   }
   validateBound(snapshot.playerPool.freeAgents.coverage);
   validateBound(snapshot.playerPool.waivers.coverage);
   validateBound(snapshot.recentTransactions.coverage);
+  return warnings;
 }
 
 function validateBound(coverage: {

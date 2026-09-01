@@ -25,6 +25,7 @@ const league: League = {
   name: 'Snapshot League',
   season: 2026,
   settings: {
+    teamCount: 2,
     rosterSlots: [
       { id: slotId, name: 'QB', kind: 'active', eligiblePositions: ['QB'] },
     ],
@@ -79,6 +80,7 @@ describe('LeagueSnapshotService', () => {
       requestedLimit: 5,
       returnedCount: 1,
     });
+    expect(result.integrityWarnings).toEqual([]);
     expect(reader.getAvailablePlayers).toHaveBeenCalledWith(testLeagueId, {
       availability: 'free-agent',
       limit: 10,
@@ -121,6 +123,84 @@ describe('LeagueSnapshotService', () => {
       service.capture({ ...captureOptions(), waiverLimit: 0 }),
     ).rejects.toMatchObject({ code: 'INVALID_CAPTURE_LIMIT' });
     expect(reader.getLeague).not.toHaveBeenCalled();
+  });
+
+  it('rejects a configured team-count mismatch', async () => {
+    const reader = readerFixture();
+    reader.getTeams.mockResolvedValue([teams[0] as Team]);
+
+    await expect(
+      serviceFor(reader).capture(captureOptions()),
+    ).rejects.toMatchObject({ code: 'TEAM_COUNT_MISMATCH' });
+  });
+
+  it('rejects incomplete standings coverage', async () => {
+    const reader = readerFixture();
+    reader.getStandings.mockResolvedValue([{ teamId: firstTeamId, rank: 1 }]);
+
+    await expect(
+      serviceFor(reader).capture(captureOptions()),
+    ).rejects.toMatchObject({ code: 'STANDINGS_TEAM_COUNT_MISMATCH' });
+  });
+
+  it('rejects duplicate player ownership across team rosters', async () => {
+    const reader = readerFixture();
+    const duplicate = makePlayer('duplicate-player');
+    reader.getRoster.mockImplementation((id) =>
+      Promise.resolve({ teamId: id, entries: [{ player: duplicate }] }),
+    );
+    reader.getLineup.mockImplementation((id, period) =>
+      Promise.resolve({
+        teamId: id,
+        scoringPeriod: period,
+        assignments: [{ slotId, playerId: duplicate.id }],
+      }),
+    );
+
+    await expect(
+      serviceFor(reader).capture(captureOptions()),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_ROSTER_OWNERSHIP' });
+  });
+
+  it('warns when best-effort player pools overlap a roster', async () => {
+    const reader = readerFixture();
+    reader.getAvailablePlayers.mockImplementation((_leagueId, query) =>
+      Promise.resolve([
+        query?.availability === 'free-agent'
+          ? (players.get(firstTeamId) as Player)
+          : makePlayer('waiver-player'),
+      ]),
+    );
+
+    const result = await serviceFor(reader).capture(captureOptions());
+
+    expect(result.integrityWarnings).toEqual([
+      {
+        code: 'PLAYER_POOL_ROSTER_OVERLAP',
+        severity: 'observation-race',
+        playerId: playerId('player-1'),
+        pool: 'free-agent',
+      },
+    ]);
+  });
+
+  it('starts team reads without waiting for slower collection reads', async () => {
+    const reader = readerFixture();
+    let resolveFreeAgents: ((players: Player[]) => void) | undefined;
+    reader.getAvailablePlayers.mockImplementation((_leagueId, query) =>
+      query?.availability === 'free-agent'
+        ? new Promise<Player[]>((resolve) => {
+            resolveFreeAgents = resolve;
+          })
+        : Promise.resolve([makePlayer('waiver-player')]),
+    );
+
+    const capture = serviceFor(reader).capture(captureOptions());
+    await vi.waitFor(() => expect(reader.getRoster).toHaveBeenCalled());
+    if (resolveFreeAgents === undefined) throw new Error('missing resolver');
+    resolveFreeAgents([makePlayer('free-agent')]);
+
+    await expect(capture).resolves.toMatchObject({ id: 'snapshot-test' });
   });
 });
 

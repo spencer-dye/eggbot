@@ -2,7 +2,7 @@
 
 Provider-independent orchestration for normalized league snapshots.
 
-`LeagueSnapshotService` composes a `FantasyPlatformReader` across league, team, roster, lineup, standings, matchup, player-pool, and transaction reads. It validates cross-resource identities and returns no partial snapshot. Because platform APIs do not expose an atomic league read, every snapshot records an observation window and `consistency: 'best-effort'`.
+`LeagueSnapshotService` composes a `FantasyPlatformReader` across league, team, roster, lineup, standings, matchup, player-pool, and transaction reads. It validates configured team count, complete standings coverage, cross-resource identities, and globally unique roster ownership, returning no partial required state. Because platform APIs do not expose an atomic league read, every snapshot records an observation window and `consistency: 'best-effort'`; pool/roster races become typed integrity warnings.
 
 Free-agent, waiver, and recent-transaction collections are explicitly bounded. Callers choose their limits and can inspect coverage metadata instead of assuming those collections are complete.
 

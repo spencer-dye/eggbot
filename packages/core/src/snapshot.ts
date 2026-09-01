@@ -8,7 +8,7 @@ import type {
   Team,
   Transaction,
 } from './domain.js';
-import type { SnapshotId } from './identifiers.js';
+import type { PlayerId, SnapshotId } from './identifiers.js';
 
 export interface BoundedCollectionCoverage {
   readonly kind: 'bounded';
@@ -32,6 +32,13 @@ export interface PlayerPoolSnapshot {
   readonly waivers: BoundedSnapshotCollection<Player>;
 }
 
+export interface SnapshotIntegrityWarning {
+  readonly code: 'PLAYER_POOL_ROSTER_OVERLAP';
+  readonly severity: 'observation-race';
+  readonly playerId: PlayerId;
+  readonly pool: 'free-agent' | 'waivers';
+}
+
 /** A validated observation window, not an atomic provider transaction. */
 export interface LeagueSnapshot {
   readonly id: SnapshotId;
@@ -45,4 +52,5 @@ export interface LeagueSnapshot {
   readonly matchups: readonly Matchup[];
   readonly playerPool: PlayerPoolSnapshot;
   readonly recentTransactions: BoundedSnapshotCollection<Transaction>;
+  readonly integrityWarnings: readonly SnapshotIntegrityWarning[];
 }

@@ -53,6 +53,6 @@ Platform state is observed source data. Analytics are deterministic values deriv
 
 ### Snapshot coverage and consistency
 
-League, team, roster, lineup, standings, and matchup reads are required for a valid snapshot. Free-agent, waiver, and recent-transaction collections are explicitly bounded and retain their requested limits and returned counts. A bounded collection is not represented as complete merely because it contains useful data.
+League, team, roster, lineup, standings, and matchup reads are required for a valid snapshot. When league settings provide a team count, snapshot membership must match it; every discovered team must have exactly one standing, and a rostered player can have only one owner. Free-agent, waiver, and recent-transaction collections are explicitly bounded and retain their requested limits and returned counts. A bounded collection is not represented as complete merely because it contains useful data.
 
-Snapshot capture spans multiple provider requests. `captureStartedAt` and `capturedAt` describe that observation window, while `consistency: 'best-effort'` makes the lack of an atomic provider read explicit. A capture fails instead of returning structurally inconsistent or partially required state.
+Snapshot capture spans multiple provider requests. `captureStartedAt` and `capturedAt` describe that observation window, while `consistency: 'best-effort'` makes the lack of an atomic provider read explicit. A capture fails instead of returning structurally inconsistent or partially required state. State that can legitimately race across reads, such as a player appearing in both a roster and an acquisition pool, is represented by a typed `SnapshotIntegrityWarning` so downstream consumers can decide whether to proceed.

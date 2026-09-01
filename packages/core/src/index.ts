@@ -55,5 +55,6 @@ export type {
   BoundedSnapshotCollection,
   LeagueSnapshot,
   PlayerPoolSnapshot,
+  SnapshotIntegrityWarning,
   TeamSnapshot,
 } from './snapshot.js';

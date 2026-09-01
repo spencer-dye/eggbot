@@ -52,6 +52,7 @@ export interface FantasyPlatformReader {
     leagueId: LeagueId,
     scoringPeriod: string,
   ): Promise<readonly Matchup[]>;
+  /** Returns exactly one standing for every team returned by getTeams. */
   getStandings(leagueId: LeagueId): Promise<readonly Standing[]>;
   getAvailablePlayers(
     leagueId: LeagueId,

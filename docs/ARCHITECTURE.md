@@ -48,11 +48,11 @@ The Yahoo package implements read capability and the Phase 2 write boundary. OAu
 
 ## Phase 3 public API changes
 
-The original `DecisionContext` independently selected league, roster, lineup, matchup, and player fields. It could not prove that two consumers received the same observed state, represent all teams, retain standings or transactions, or distinguish bounded free-agent and waiver pools. Phase 3 replaces that ad hoc state with one normalized `LeagueSnapshot` plus a separate analytics record.
+The original `DecisionContext` independently selected league, roster, lineup, matchup, and player fields. It could not prove that two consumers received the same observed state, represent all teams, retain standings or transactions, or distinguish bounded free-agent and waiver pools. Phase 3 replaces that ad hoc state with one normalized `LeagueSnapshot`, an explicit `managedTeamId`, and a separate analytics record. `createDecisionContext` rejects management scope that is absent from the snapshot.
 
 `@eggbot/core` owns the provider-neutral snapshot vocabulary and opaque `SnapshotId`. A snapshot contains its league and scoring period, every discovered team's roster and lineup, standings, matchups, separate free-agent and waiver pools, and recent transactions. Potentially large player and transaction collections carry explicit bounded-coverage metadata; a consumer cannot mistake the first N results for a complete collection.
 
-`@eggbot/snapshot` orchestrates a `FantasyPlatformReader` to capture this state and validates cross-resource identity invariants before returning it. Capture is fail-closed: required read or integrity failures produce no partial snapshot. Provider APIs do not offer an atomic read across all resources, so snapshots record both `captureStartedAt` and `capturedAt` and explicitly declare `consistency: 'best-effort'`. The service bounds team-read concurrency and accepts injected clocks and ID factories for deterministic tests.
+`@eggbot/snapshot` orchestrates a `FantasyPlatformReader` to capture this state and validates cross-resource identity invariants before returning it. Capture is fail-closed for configured team count, complete standings coverage, global roster ownership, and required read failures. Provider APIs do not offer an atomic read across all resources, so pool/roster overlap is retained as an `observation-race` integrity warning rather than rejecting an otherwise useful snapshot. Snapshots record both `captureStartedAt` and `capturedAt` and explicitly declare `consistency: 'best-effort'`. The service starts roster and lineup reads as soon as team discovery completes, bounds their concurrency, and accepts injected clocks and ID factories for deterministic tests.
 
 No snapshot persistence implementation is selected in Phase 3. Applications may pass returned snapshots to analytics and decision engines or persist them through a future database-neutral repository once access patterns are established.
 
@@ -97,6 +97,7 @@ Policy evaluation is action-scoped: every proposed action has its own approved/r
 - Keep `PlatformReference` and `FantasyGame.platformReference` until a second adapter provides evidence for a shared `GameId` design.
 - Keep Yahoo's recursive collection traversal while sanitized fixtures and the opt-in live suite validate actual responses. Replace it with context-specific traversal if real payloads reveal duplicates or ambiguous nesting.
 - Further constrain injectable Yahoo base URLs if transports become consumer-configurable outside tests. Current API paths are generated internally and explicit absolute paths are rejected.
+- Extend `CollectionCoverage` with a complete variant only when a platform can authoritatively provide a total or `hasMore: false`; a short page alone is not proof of completeness.
 
 ## Decision and execution separation
 
