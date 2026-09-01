@@ -16,6 +16,7 @@ pnpm cli yahoo standings 449.l.1234
 pnpm cli yahoo matchups 449.l.1234 3
 pnpm cli yahoo players 449.l.1234 --availability waivers --positions RB,WR --limit 10
 pnpm cli yahoo transactions 449.l.1234 --limit 10
+pnpm cli yahoo snapshot 449.l.1234 3 --free-agent-limit 50 --waiver-limit 50
 ```
 
 Yahoo commands read `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, and optionally `YAHOO_REDIRECT_URI` (default `oob`). Initial tokens can be supplied through `YAHOO_ACCESS_TOKEN`, `YAHOO_REFRESH_TOKEN`, and `YAHOO_TOKEN_EXPIRES_AT` as epoch milliseconds or an ISO timestamp.

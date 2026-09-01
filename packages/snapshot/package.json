@@ -1,0 +1,26 @@
+{
+  "name": "@eggbot/snapshot",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit --composite false"
+  },
+  "dependencies": {
+    "@eggbot/core": "workspace:*",
+    "@eggbot/platform": "workspace:*"
+  }
+}

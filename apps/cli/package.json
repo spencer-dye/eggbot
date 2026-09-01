@@ -16,6 +16,7 @@
     "@eggbot/platform": "workspace:*",
     "@eggbot/policy": "workspace:*",
     "@eggbot/scheduler": "workspace:*",
+    "@eggbot/snapshot": "workspace:*",
     "@eggbot/storage": "workspace:*",
     "@eggbot/yahoo": "workspace:*"
   }

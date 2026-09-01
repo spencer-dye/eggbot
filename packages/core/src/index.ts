@@ -33,6 +33,7 @@ export {
   leagueId,
   playerId,
   rosterSlotId,
+  snapshotId,
   teamId,
   transactionId,
 } from './identifiers.js';
@@ -45,6 +46,14 @@ export type {
   PlatformReference,
   PlayerId,
   RosterSlotId,
+  SnapshotId,
   TeamId,
   TransactionId,
 } from './identifiers.js';
+export type {
+  BoundedCollectionCoverage,
+  BoundedSnapshotCollection,
+  LeagueSnapshot,
+  PlayerPoolSnapshot,
+  TeamSnapshot,
+} from './snapshot.js';

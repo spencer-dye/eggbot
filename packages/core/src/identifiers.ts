@@ -14,6 +14,7 @@ export type DecisionId = Brand<string, 'DecisionId'>;
 export type ActionId = Brand<string, 'ActionId'>;
 export type TransactionId = Brand<string, 'TransactionId'>;
 export type JobId = Brand<string, 'JobId'>;
+export type SnapshotId = Brand<string, 'SnapshotId'>;
 
 const opaqueIdSchema = z.string().trim().min(1, 'Identifier cannot be empty');
 
@@ -35,6 +36,8 @@ export const actionId = (value: unknown): ActionId =>
 export const transactionId = (value: unknown): TransactionId =>
   parseId<'TransactionId'>(value);
 export const jobId = (value: unknown): JobId => parseId<'JobId'>(value);
+export const snapshotId = (value: unknown): SnapshotId =>
+  parseId<'SnapshotId'>(value);
 
 /** An identifier owned by an external platform, kept distinct from EggBot IDs. */
 export interface PlatformReference {

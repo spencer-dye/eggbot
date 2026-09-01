@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 2 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 3 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -16,7 +16,7 @@ Implemented lineup changes and standalone add, drop, add/drop, and waiver transa
 
 ## Phase 3 — League snapshots
 
-Create normalized, timestamped state suitable for analytics and decision engines.
+Implemented normalized, timestamped, integrity-checked league state with explicit best-effort consistency, bounded free-agent/waiver and transaction coverage, all-team roster/lineup state, and a provider-independent capture service suitable for analytics and decision engines.
 
 ## Phase 4 — Analytics
 

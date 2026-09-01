@@ -24,6 +24,7 @@ import {
   type YahooOAuthConfig,
   type YahooTokenSet,
 } from '@eggbot/yahoo';
+import { LeagueSnapshotService } from '@eggbot/snapshot';
 
 import { createFileTokenStore, redactTokens } from './token-file-store.js';
 
@@ -47,7 +48,7 @@ async function main(args: readonly string[]): Promise<void> {
         [],
       ),
       platformBoundary: yahooAdapterMetadata,
-      phase: 2,
+      phase: 3,
       writeOperations: 'guarded',
     });
     return;
@@ -196,6 +197,23 @@ async function main(args: readonly string[]): Promise<void> {
           asLeagueId(requireArgument(commandArgs, 0, 'league key')),
           limit === undefined ? {} : { limit },
         ),
+      );
+      break;
+    }
+    case 'snapshot': {
+      const snapshotService = new LeagueSnapshotService({ reader });
+      printJson(
+        await snapshotService.capture({
+          leagueId: asLeagueId(requireArgument(commandArgs, 0, 'league key')),
+          scoringPeriod: requireArgument(commandArgs, 1, 'scoring period'),
+          freeAgentLimit:
+            readNumberOption(commandArgs, '--free-agent-limit') ?? 50,
+          waiverLimit: readNumberOption(commandArgs, '--waiver-limit') ?? 50,
+          transactionLimit:
+            readNumberOption(commandArgs, '--transaction-limit') ?? 25,
+          teamReadConcurrency:
+            readNumberOption(commandArgs, '--team-concurrency') ?? 4,
+        }),
       );
       break;
     }
@@ -478,6 +496,9 @@ function printHelp(): void {
   pnpm cli yahoo players <league-key> [--availability available|free-agent|waivers]
       [--positions RB,WR] [--search text] [--limit count]
   pnpm cli yahoo transactions <league-key> [--limit count]
+  pnpm cli yahoo snapshot <league-key> <scoring-period>
+      [--free-agent-limit count] [--waiver-limit count]
+      [--transaction-limit count] [--team-concurrency count]
   pnpm cli yahoo lineup-change <league-key> <team-key> <week>
       <player-key=Yahoo-position,...> [--action-id id] [--execute]
   pnpm cli yahoo add <league-key> <team-key> <player-key>

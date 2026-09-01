@@ -1,6 +1,6 @@
 # EggBot
 
-EggBot is a provider-independent TypeScript framework for building safe, inspectable fantasy-football automation. This repository currently contains the Phase 0 domain model, extension contracts, and workspace tooling only.
+EggBot is a provider-independent TypeScript framework for building safe, inspectable fantasy-football automation. Phases 0 through 3 provide the core domain, Yahoo reads and guarded writes, and normalized league snapshots for analytics and decision engines.
 
 ## Requirements
 
@@ -15,6 +15,6 @@ pnpm check
 pnpm cli
 ```
 
-Use `pnpm cli yahoo help` to list the opt-in Yahoo OAuth and read-only commands. The CLI stores Yahoo tokens in a gitignored, owner-readable file by default and never exposes a write operation.
+Use `pnpm cli yahoo help` to list opt-in Yahoo OAuth, read, snapshot, and guarded write commands. The CLI stores Yahoo tokens in a gitignored, owner-only file by default. Write previews are non-mutating; execution requires all explicit safety gates documented by the CLI.
 
 See [the architecture](docs/ARCHITECTURE.md), [domain vocabulary](docs/DOMAIN.md), and [roadmap](docs/ROADMAP.md).

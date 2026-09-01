@@ -17,6 +17,7 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **FantasyAction** is inspectable intent to change platform state. It models lineup setting, standalone add and drop, add/drop, and waiver-claim actions without conflating immediate acquisitions with pending claims.
 - **FantasyDecision** records a decision identifier, timestamp, rationale, and proposed actions. It does not approve or execute them.
 - **ActionResult** records a local dry run, a durably recorded execution, an uncertain execution outcome, or a failed attempt with a code, message, and retryability signal.
+- **LeagueSnapshot** is a normalized, timestamped observation window containing league-wide state for one scoring period. It groups team rosters and lineups, standings, matchups, acquisition pools, and recent transactions without claiming provider-level atomic consistency.
 
 ## Important distinctions
 
@@ -49,3 +50,9 @@ Platform payloads, enum values, and identifiers are external data. An adapter va
 ### Platform state versus derived analytics
 
 Platform state is observed source data. Analytics are deterministic values derived from that data. Keeping them separate makes snapshots reproducible and calculations independently testable.
+
+### Snapshot coverage and consistency
+
+League, team, roster, lineup, standings, and matchup reads are required for a valid snapshot. Free-agent, waiver, and recent-transaction collections are explicitly bounded and retain their requested limits and returned counts. A bounded collection is not represented as complete merely because it contains useful data.
+
+Snapshot capture spans multiple provider requests. `captureStartedAt` and `capturedAt` describe that observation window, while `consistency: 'best-effort'` makes the lack of an atomic provider read explicit. A capture fails instead of returning structurally inconsistent or partially required state.

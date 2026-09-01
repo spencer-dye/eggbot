@@ -2,7 +2,7 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phase 0 established those boundaries without choosing a league format, model provider, database, scheduler, or deployment environment. Phase 1 supplies the first read-only adapter without weakening them.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 3 establish the shared boundaries, Yahoo adapter, guarded execution, and normalized snapshots without choosing a league format, model provider, database, scheduler, or deployment environment.
 
 ## Workspace layout
 
@@ -11,6 +11,7 @@ EggBot is a reusable, provider-independent framework for safe fantasy-football a
 | `@eggbot/core`      | Stable domain vocabulary, opaque IDs, actions, and results | None                          |
 | `@eggbot/platform`  | Provider-neutral read and execution ports                  | `core`                        |
 | `@eggbot/yahoo`     | Yahoo OAuth, read transport, validation, and mapping       | `core`, `platform`            |
+| `@eggbot/snapshot`  | Normalized multi-read league snapshot capture              | `core`, `platform`            |
 | `@eggbot/agent`     | Provider-neutral decision-engine port                      | `core`                        |
 | `@eggbot/policy`    | Deterministic approval/rejection boundary                  | `core`                        |
 | `@eggbot/analytics` | Deterministic calculations and analytics port              | `core`                        |
@@ -29,6 +30,8 @@ flowchart TD
   CLI --> S[storage port]
   CLI --> J[scheduler port]
   Y[Yahoo adapter] --> FP
+  LS[snapshot capture] --> FP
+  LS --> C
   A --> C[core]
   P --> C
   N --> C
@@ -42,6 +45,16 @@ flowchart TD
 The platform contract separates `FantasyPlatformReader` from `FantasyPlatformExecutor`. Read-only applications therefore need no write authority. Concrete adapters return core types and translate `FantasyAction` data into provider operations internally.
 
 The Yahoo package implements read capability and the Phase 2 write boundary. OAuth, token refresh, HTTP transport, response validation, Yahoo identifier codecs, mappings, XML serialization, state validation, and idempotency remain inside the adapter.
+
+## Phase 3 public API changes
+
+The original `DecisionContext` independently selected league, roster, lineup, matchup, and player fields. It could not prove that two consumers received the same observed state, represent all teams, retain standings or transactions, or distinguish bounded free-agent and waiver pools. Phase 3 replaces that ad hoc state with one normalized `LeagueSnapshot` plus a separate analytics record.
+
+`@eggbot/core` owns the provider-neutral snapshot vocabulary and opaque `SnapshotId`. A snapshot contains its league and scoring period, every discovered team's roster and lineup, standings, matchups, separate free-agent and waiver pools, and recent transactions. Potentially large player and transaction collections carry explicit bounded-coverage metadata; a consumer cannot mistake the first N results for a complete collection.
+
+`@eggbot/snapshot` orchestrates a `FantasyPlatformReader` to capture this state and validates cross-resource identity invariants before returning it. Capture is fail-closed: required read or integrity failures produce no partial snapshot. Provider APIs do not offer an atomic read across all resources, so snapshots record both `captureStartedAt` and `capturedAt` and explicitly declare `consistency: 'best-effort'`. The service bounds team-read concurrency and accepts injected clocks and ID factories for deterministic tests.
+
+No snapshot persistence implementation is selected in Phase 3. Applications may pass returned snapshots to analytics and decision engines or persist them through a future database-neutral repository once access patterns are established.
 
 ## Phase 2 public API changes
 

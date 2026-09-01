@@ -53,6 +53,9 @@ importers:
       '@eggbot/scheduler':
         specifier: workspace:*
         version: link:../../packages/scheduler
+      '@eggbot/snapshot':
+        specifier: workspace:*
+        version: link:../../packages/snapshot
       '@eggbot/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -91,6 +94,15 @@ importers:
         version: link:../core
 
   packages/scheduler: {}
+
+  packages/snapshot:
+    dependencies:
+      '@eggbot/core':
+        specifier: workspace:*
+        version: link:../core
+      '@eggbot/platform':
+        specifier: workspace:*
+        version: link:../platform
 
   packages/storage: {}
 

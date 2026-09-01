@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/platform" },
+    { "path": "packages/snapshot" },
     { "path": "packages/yahoo" },
     { "path": "packages/agent" },
     { "path": "packages/policy" },
