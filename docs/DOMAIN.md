@@ -12,6 +12,8 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **Lineup** assigns rostered players to slots for one scoring period.
 - **RosterSlot** defines an active, bench, or reserve place and its eligible positions.
 - **Matchup** groups participating fantasy teams and optional observed scores for a scoring period. It does not assume head-to-head play has exactly two participants.
+- **Standing** records a team's rank and any standings facts the platform supplies. Win/loss records and points are optional so the model does not assume one competition format.
+- **Transaction** records a completed or pending league transaction as one or more normalized player moves. It is observed platform history, not an executable `FantasyAction`.
 - **FantasyAction** is inspectable intent to change platform state. Phase 0 models lineup setting, add/drop, and waiver-claim actions.
 - **FantasyDecision** records a decision identifier, timestamp, rationale, and proposed actions. It does not approve or execute them.
 - **ActionResult** records either an executed action with optional external context, or a failed attempt with a code, message, and retryability signal.
@@ -25,6 +27,10 @@ A roster answers “which players does this team control?” A lineup answers �
 ### Decision versus action
 
 A decision explains why zero or more changes are proposed. An action is one structured unit of intent. Neither performs a mutation.
+
+### Transaction versus action
+
+A transaction is historical state read from a platform. An action is EggBot's proposed intent. Similar vocabulary such as add/drop does not make an observed Yahoo transaction executable.
 
 ### Proposal versus execution
 

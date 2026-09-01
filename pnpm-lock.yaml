@@ -96,9 +96,15 @@ importers:
 
   packages/yahoo:
     dependencies:
+      '@eggbot/core':
+        specifier: workspace:*
+        version: link:../core
       '@eggbot/platform':
         specifier: workspace:*
         version: link:../platform
+      zod:
+        specifier: ^4.1.5
+        version: 4.5.4
 
 packages:
 

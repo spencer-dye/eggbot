@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Later phases are documented here but are not implemented during Phase 0.
+Each phase builds on stable public boundaries. Phases 0 and 1 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -8,7 +8,7 @@ Establish the pnpm monorepo, strict TypeScript domain model, architecture docume
 
 ## Phase 1 — Yahoo read integration
 
-Add OAuth and normalized read-only access to leagues, teams, rosters, standings, matchups, players, and transactions.
+Add OAuth and normalized read-only access to leagues, teams, rosters, standings, matchups, players, and transactions. Implemented with injected token persistence and transport boundaries; live credentials remain opt-in.
 
 ## Phase 2 — Yahoo safe-write integration
 

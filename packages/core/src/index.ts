@@ -19,7 +19,10 @@ export type {
   RosterEntry,
   RosterSlot,
   ScoringRule,
+  Standing,
   Team,
+  Transaction,
+  TransactionMove,
 } from './domain.js';
 export {
   actionId,
@@ -29,6 +32,7 @@ export {
   playerId,
   rosterSlotId,
   teamId,
+  transactionId,
 } from './identifiers.js';
 export type {
   ActionId,
@@ -40,4 +44,5 @@ export type {
   PlayerId,
   RosterSlotId,
   TeamId,
+  TransactionId,
 } from './identifiers.js';

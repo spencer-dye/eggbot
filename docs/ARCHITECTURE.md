@@ -2,7 +2,7 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phase 0 establishes those boundaries without choosing a league format, model provider, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phase 0 established those boundaries without choosing a league format, model provider, database, scheduler, or deployment environment. Phase 1 supplies the first read-only adapter without weakening them.
 
 ## Workspace layout
 
@@ -10,7 +10,7 @@ EggBot is a reusable, provider-independent framework for safe fantasy-football a
 | ------------------- | ---------------------------------------------------------- | ----------------------------- |
 | `@eggbot/core`      | Stable domain vocabulary, opaque IDs, actions, and results | None                          |
 | `@eggbot/platform`  | Provider-neutral read and execution ports                  | `core`                        |
-| `@eggbot/yahoo`     | Yahoo adapter boundary and discovery metadata              | `platform`                    |
+| `@eggbot/yahoo`     | Yahoo OAuth, read transport, validation, and mapping       | `core`, `platform`            |
 | `@eggbot/agent`     | Provider-neutral decision-engine port                      | `core`                        |
 | `@eggbot/policy`    | Deterministic approval/rejection boundary                  | `core`                        |
 | `@eggbot/analytics` | Deterministic calculations and analytics port              | `core`                        |
@@ -37,11 +37,31 @@ flowchart TD
 
 ## Domain and platform separation
 
-`@eggbot/core` owns EggBot's vocabulary. Platform payloads and identifiers must be validated and mapped at adapter boundaries; they must not become the core model. Opaque EggBot IDs prevent accidental interchange of league, team, player, slot, decision, and action identifiers. `PlatformReference` exists only to explicitly associate an external identity when a boundary needs one.
+`@eggbot/core` owns EggBot's vocabulary. Platform payloads and identifiers must be validated and mapped at adapter boundaries; they must not become the core model. Opaque EggBot IDs prevent accidental interchange of league, team, player, slot, decision, action, and transaction identifiers. `PlatformReference` exists only to explicitly associate an external identity when a boundary needs one.
 
 The platform contract separates `FantasyPlatformReader` from `FantasyPlatformExecutor`. Read-only applications therefore need no write authority. Concrete adapters return core types and translate `FantasyAction` data into provider operations internally.
 
-The Yahoo package currently exports metadata declaring both capabilities unavailable. OAuth, HTTP, parsing, mapping, and execution are deferred to the relevant roadmap phases.
+The Yahoo package implements the Phase 1 read capability. OAuth, token refresh, HTTP transport, response validation, Yahoo identifier codecs, and mappings remain inside the adapter. Yahoo write execution remains unavailable and is deferred to Phase 2.
+
+## Phase 1 public API additions
+
+Yahoo read integration exposed concrete omissions in the Phase 0 contracts. These are additive changes; no existing method or type is removed or reinterpreted.
+
+- Core adds `Standing`, `Transaction`, `TransactionMove`, and `TransactionId`. Standings and transaction history are provider-independent league facts explicitly required by Phase 1, but Phase 0 had no normalized vocabulary for them.
+- Platform adds `FantasyGame`, `LeagueSummary`, `TransactionQuery`, and reader methods for authenticated game/league discovery, standings, and transactions. Yahoo cannot implement the required reads through the original six reader methods.
+- `getRoster` remains the current roster read. Yahoo's week-specific roster representation is used by the existing `getLineup(teamId, scoringPeriod)` method, so no Yahoo week selector leaks into the general platform API.
+
+Yahoo's irregular JSON collection encoding, resource keys, pagination limits, OAuth token shape, and week endpoint syntax remain adapter-local.
+
+## Yahoo OAuth and read transport
+
+`YahooOAuthClient` implements Yahoo's authorization-code exchange and proactive access-token refresh. Callers inject an optional `YahooTokenStore`; this keeps token persistence out of the adapter while ensuring refresh-token rotation can be saved. Concurrent callers share one refresh request. Client credentials and tokens never enter domain objects.
+
+`YahooHttpClient` accepts only relative Fantasy API paths, adds the JSON format selector and Bearer token, and retries a GET once after a 401 using a forced refresh. It does not expose arbitrary methods and cannot issue writes. Successful responses must contain Yahoo's `fantasy_content` envelope before reaching resource mappers.
+
+`YahooFantasyReader` builds Yahoo-specific resource and collection URLs, performs pagination, and maps the validated boundary data into public EggBot types. The CLI is the only code that reads Yahoo environment variables. It retains refreshed tokens only in memory and reports them to the caller rather than selecting persistence infrastructure.
+
+Unit tests inject `fetch`, a clock, and token stores. Normal tests use representative JSON fixtures and never require Yahoo credentials or network access.
 
 ## Decision and execution separation
 

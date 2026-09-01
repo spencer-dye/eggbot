@@ -3,6 +3,7 @@ import type {
   PlayerId,
   RosterSlotId,
   TeamId,
+  TransactionId,
 } from './identifiers.js';
 
 export type Position =
@@ -88,4 +89,34 @@ export interface MatchupParticipant {
 export interface Matchup {
   readonly scoringPeriod: string;
   readonly participants: readonly MatchupParticipant[];
+}
+
+/** Provider-independent standings facts; fields vary by league competition style. */
+export interface Standing {
+  readonly teamId: TeamId;
+  readonly rank: number;
+  readonly wins?: number;
+  readonly losses?: number;
+  readonly ties?: number;
+  readonly percentage?: number;
+  readonly pointsFor?: number;
+  readonly pointsAgainst?: number;
+}
+
+export interface TransactionMove {
+  readonly type: 'add' | 'drop' | 'trade' | 'other';
+  readonly playerId: PlayerId;
+  readonly sourceTeamId?: TeamId;
+  readonly destinationTeamId?: TeamId;
+}
+
+/** Observed platform history, distinct from an EggBot action proposal. */
+export interface Transaction {
+  readonly id: TransactionId;
+  readonly leagueId: LeagueId;
+  readonly type:
+    'add' | 'drop' | 'add-drop' | 'trade' | 'commissioner' | 'other';
+  readonly status: string;
+  readonly occurredAt?: string;
+  readonly moves: readonly TransactionMove[];
 }
