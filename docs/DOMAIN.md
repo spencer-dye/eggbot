@@ -1,0 +1,43 @@
+# EggBot domain vocabulary
+
+EggBot models normalized fantasy-football concepts rather than mirroring any provider payload. Structures are readonly where practical and IDs are opaque, domain-specific strings.
+
+## Entities and values
+
+- **League** identifies a competition for a season and owns its `LeagueSettings`.
+- **LeagueSettings** describes roster slots and scoring rules without assuming a league size or scoring preset.
+- **Team** is a fantasy team within a league.
+- **Player** is a football player eligible for one or more positions. Provider identifiers are not player IDs.
+- **Roster** is the complete set of players controlled by a fantasy team.
+- **Lineup** assigns rostered players to slots for one scoring period.
+- **RosterSlot** defines an active, bench, or reserve place and its eligible positions.
+- **Matchup** groups participating fantasy teams and optional observed scores for a scoring period. It does not assume head-to-head play has exactly two participants.
+- **FantasyAction** is inspectable intent to change platform state. Phase 0 models lineup setting, add/drop, and waiver-claim actions.
+- **FantasyDecision** records a decision identifier, timestamp, rationale, and proposed actions. It does not approve or execute them.
+- **ActionResult** records either an executed action with optional external context, or a failed attempt with a code, message, and retryability signal.
+
+## Important distinctions
+
+### Roster versus lineup
+
+A roster answers “which players does this team control?” A lineup answers “where are rostered players assigned for this scoring period?” Bench and reserve eligibility belongs to slot configuration; weekly placement belongs to the lineup.
+
+### Decision versus action
+
+A decision explains why zero or more changes are proposed. An action is one structured unit of intent. Neither performs a mutation.
+
+### Proposal versus execution
+
+Actions inside a decision are proposed. Policy evaluation yields approved actions or rejection issues. Only a platform executor can attempt an approved action, producing an `ActionResult`. These stages stay distinct for audit, dry-run, replay, and safety controls.
+
+### Platform data versus EggBot domain data
+
+Platform payloads, enum values, and identifiers are external data. An adapter validates and maps them into EggBot-owned models. Core consumers never depend on Yahoo or another provider's response shape. `PlatformReference` can retain an explicit provider/value association without making it an EggBot entity ID.
+
+### Read operation versus write operation
+
+`FantasyPlatformReader` retrieves normalized state. `FantasyPlatformExecutor` causes side effects. Consumers can depend on the read port without receiving write authority.
+
+### Platform state versus derived analytics
+
+Platform state is observed source data. Analytics are deterministic values derived from that data. Keeping them separate makes snapshots reproducible and calculations independently testable.

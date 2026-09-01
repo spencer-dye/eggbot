@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/platform" },
+    { "path": "../../packages/yahoo" },
+    { "path": "../../packages/agent" },
+    { "path": "../../packages/policy" },
+    { "path": "../../packages/analytics" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/scheduler" }
+  ],
+  "include": ["src/**/*.ts"]
+}

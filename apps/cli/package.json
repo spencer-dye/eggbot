@@ -1,0 +1,22 @@
+{
+  "name": "@eggbot/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit --composite false",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@eggbot/agent": "workspace:*",
+    "@eggbot/analytics": "workspace:*",
+    "@eggbot/core": "workspace:*",
+    "@eggbot/platform": "workspace:*",
+    "@eggbot/policy": "workspace:*",
+    "@eggbot/scheduler": "workspace:*",
+    "@eggbot/storage": "workspace:*",
+    "@eggbot/yahoo": "workspace:*"
+  }
+}

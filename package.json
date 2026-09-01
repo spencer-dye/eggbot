@@ -1,0 +1,31 @@
+{
+  "name": "eggbot",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A modular framework for autonomous fantasy football management",
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm --recursive --sort --if-present run build",
+    "typecheck": "pnpm --recursive --sort --if-present run typecheck",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "pnpm build && pnpm typecheck && pnpm test && pnpm lint && pnpm format:check",
+    "cli": "pnpm --filter @eggbot/cli start"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^24.3.0",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.42.0",
+    "vitest": "^3.2.4"
+  }
+}

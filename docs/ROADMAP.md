@@ -1,0 +1,51 @@
+# EggBot roadmap
+
+Each phase builds on stable public boundaries. Later phases are documented here but are not implemented during Phase 0.
+
+## Phase 0 — Foundation
+
+Establish the pnpm monorepo, strict TypeScript domain model, architecture documentation, extension interfaces, CLI composition proof, and deterministic unit tests.
+
+## Phase 1 — Yahoo read integration
+
+Add OAuth and normalized read-only access to leagues, teams, rosters, standings, matchups, players, and transactions.
+
+## Phase 2 — Yahoo safe-write integration
+
+Add lineup changes and supported transactions with validation, idempotency considerations, and dry-run capability.
+
+## Phase 3 — League snapshots
+
+Create normalized, timestamped state suitable for analytics and decision engines.
+
+## Phase 4 — Analytics
+
+Implement deterministic fantasy-football calculations such as lineup projections, replacement value, scarcity, matchup margin, and roster risk.
+
+## Phase 5 — Decision engines
+
+Stabilize the provider-neutral decision interface and add the first concrete integrations in separate provider packages.
+
+## Phase 6 — Policy engine
+
+Expand guardrails, validation, structured rejection reasons, conflict detection, and execution approval.
+
+## Phase 7 — Autonomous lineup management
+
+Deliver end-to-end, low-risk autonomous lineup management with full auditability.
+
+## Phase 8 — Waiver management
+
+Add/drop decisions, waiver ordering, and budget or priority strategy.
+
+## Phase 9 — External football intelligence
+
+Integrate injuries, projections, depth charts, usage, news, and schedules behind provider-neutral ports.
+
+## Phase 10 — Trade support
+
+Build trade evaluation first. Consider autonomous trade behavior only after sufficient safeguards and approval controls exist.
+
+## Phase 11 — Operational hardening
+
+Add production scheduling, audit history, retries, reconciliation, failure recovery, persistence implementations, deployment documentation, and operational guidance.
