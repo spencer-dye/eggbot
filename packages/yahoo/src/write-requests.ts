@@ -55,20 +55,42 @@ export function buildYahooWriteRequest(
     };
   }
 
-  const addPlayerKey = yahooPlayerKey(action.addPlayerId);
-  const dropPlayerId = action.dropPlayerId;
+  const addPlayerId =
+    action.type === 'add-player'
+      ? action.playerId
+      : action.type === 'drop-player'
+        ? undefined
+        : action.addPlayerId;
+  const dropPlayerId =
+    action.type === 'drop-player'
+      ? action.playerId
+      : action.type === 'add-player'
+        ? undefined
+        : action.dropPlayerId;
+  const addPlayerKey =
+    addPlayerId === undefined ? undefined : yahooPlayerKey(addPlayerId);
   const dropPlayerKey =
     dropPlayerId === undefined ? undefined : yahooPlayerKey(dropPlayerId);
-  const transactionType = dropPlayerKey === undefined ? 'add' : 'add/drop';
-  const add = `<player><player_key>${escapeXml(addPlayerKey)}</player_key><transaction_data><type>add</type><destination_team_key>${escapeXml(teamKey)}</destination_team_key></transaction_data></player>`;
+  const transactionType =
+    addPlayerKey === undefined
+      ? 'drop'
+      : dropPlayerKey === undefined
+        ? 'add'
+        : 'add/drop';
+  const add =
+    addPlayerKey === undefined
+      ? ''
+      : `<player><player_key>${escapeXml(addPlayerKey)}</player_key><transaction_data><type>add</type><destination_team_key>${escapeXml(teamKey)}</destination_team_key></transaction_data></player>`;
   const drop =
     dropPlayerKey === undefined
       ? ''
       : `<player><player_key>${escapeXml(dropPlayerKey)}</player_key><transaction_data><type>drop</type><source_team_key>${escapeXml(teamKey)}</source_team_key></transaction_data></player>`;
   const playerPayload =
-    dropPlayerKey === undefined
-      ? `<player>${add.slice('<player>'.length, -'</player>'.length)}</player>`
-      : `<players>${add}${drop}</players>`;
+    addPlayerKey === undefined
+      ? `<player>${drop.slice('<player>'.length, -'</player>'.length)}</player>`
+      : dropPlayerKey === undefined
+        ? `<player>${add.slice('<player>'.length, -'</player>'.length)}</player>`
+        : `<players>${add}${drop}</players>`;
   const bid =
     action.type === 'waiver-claim' && action.bid !== undefined
       ? `<faab_bid>${action.bid}</faab_bid>`
@@ -83,7 +105,11 @@ export function buildYahooWriteRequest(
     summary:
       action.type === 'waiver-claim'
         ? `Submit waiver claim for ${addPlayerKey}${dropPlayerKey === undefined ? '' : ` and drop ${dropPlayerKey}`}`
-        : `Add ${addPlayerKey} and drop ${dropPlayerKey}`,
+        : action.type === 'add-player'
+          ? `Add free agent ${addPlayerKey}`
+          : action.type === 'drop-player'
+            ? `Drop ${dropPlayerKey}`
+            : `Add free agent ${addPlayerKey} and drop ${dropPlayerKey}`,
   };
 }
 

@@ -26,6 +26,8 @@ Phase 2 write commands produce the exact request preview without credentials by 
 
 ```sh
 pnpm cli yahoo lineup-change 449.l.1234 449.l.1234.t.1 3 449.p.10=QB,449.p.20=RB
+pnpm cli yahoo add 449.l.1234 449.l.1234.t.1 449.p.10
+pnpm cli yahoo drop 449.l.1234 449.l.1234.t.1 449.p.20
 pnpm cli yahoo add-drop 449.l.1234 449.l.1234.t.1 449.p.10 449.p.20
 pnpm cli yahoo waiver 449.l.1234 449.l.1234.t.1 449.p.10 449.p.20 --bid 7
 ```

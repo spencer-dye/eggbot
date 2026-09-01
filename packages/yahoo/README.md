@@ -15,7 +15,9 @@ Construct `YahooOAuthClient`, pass it to `YahooHttpClient`, and inject that into
 
 The adapter requests Yahoo's JSON representation and normalizes its array-of-fragments resource encoding internally. Raw Yahoo payload types and collection shapes are not exported. EggBot identifiers are namespaced separately from Yahoo resource keys.
 
-`YahooFantasyExecutor` implements explicit dry-run and execute modes for weekly lineup changes, add/drop transactions, and waiver claims. Execute mode additionally requires `allowWrites: true`; dry-run remains the safe default at the CLI boundary. Action IDs are idempotency keys. The default journal is in-memory, so production consumers must inject a durable `YahooExecutionJournal`.
+`YahooFantasyExecutor` implements explicit dry-run and execute modes for weekly lineup changes, standalone adds/drops, add/drop transactions, and waiver claims. It validates player ownership so free-agent actions cannot silently become waiver claims and waiver actions cannot become immediate acquisitions. Execute mode additionally requires `allowWrites: true`; dry-run remains the safe default at the CLI boundary.
+
+Action IDs are idempotency keys. The executor writes a pending journal record before mutation. Ambiguous POST outcomes and journal commit failures return `execution-uncertain` and cannot automatically retry. The default journal is in-memory, so production consumers must inject a durable `YahooExecutionJournal` and provide an explicit reconciliation workflow.
 
 Yahoo currently documents these write endpoints but does not grant write access to new applications. Dry-runs work with read credentials; live execution requires credentials Yahoo has explicitly authorized for writes.
 

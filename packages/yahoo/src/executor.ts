@@ -17,6 +17,10 @@ import {
   YahooApiError,
   YahooResponseValidationError,
 } from './errors.js';
+import {
+  YahooPlayerAvailabilityClient,
+  type YahooPlayerAvailabilityReader,
+} from './availability.js';
 import type { YahooHttpClient } from './http.js';
 import {
   yahooLeagueKey,
@@ -28,14 +32,26 @@ import {
   buildYahooWriteRequest,
   type YahooWriteRequest,
 } from './write-requests.js';
+import { extractYahooTransactionReference } from './write-response.js';
 
 type ExecutedResult = Extract<ActionResult, { status: 'executed' }>;
+type FailedResult = Extract<ActionResult, { status: 'failed' }>;
 
-export interface YahooExecutionRecord {
+interface YahooExecutionRecordBase {
   readonly actionId: ActionId;
   readonly fingerprint: string;
-  readonly result: ExecutedResult;
 }
+
+export type YahooExecutionRecord =
+  | (YahooExecutionRecordBase & { readonly state: 'pending' })
+  | (YahooExecutionRecordBase & {
+      readonly state: 'executed';
+      readonly result: ExecutedResult;
+    })
+  | (YahooExecutionRecordBase & {
+      readonly state: 'failed';
+      readonly result: FailedResult;
+    });
 
 export interface YahooExecutionJournal {
   load(actionId: ActionId): Promise<YahooExecutionRecord | undefined>;
@@ -61,6 +77,7 @@ export interface YahooFantasyExecutorOptions {
   /** Runtime kill switch. Execute mode is rejected unless this is true. */
   readonly allowWrites?: boolean;
   readonly journal?: YahooExecutionJournal;
+  readonly availabilityReader?: YahooPlayerAvailabilityReader;
 }
 
 export class YahooFantasyExecutor implements FantasyPlatformExecutor {
@@ -68,6 +85,11 @@ export class YahooFantasyExecutor implements FantasyPlatformExecutor {
   readonly #reader: FantasyPlatformReader;
   readonly #allowWrites: boolean;
   readonly #journal: YahooExecutionJournal;
+  readonly #availability: YahooPlayerAvailabilityReader;
+  readonly #poisoned = new Map<
+    ActionId,
+    { fingerprint: string; result: ActionResult }
+  >();
   readonly #inFlight = new Map<
     ActionId,
     { fingerprint: string; promise: Promise<ActionResult> }
@@ -78,6 +100,9 @@ export class YahooFantasyExecutor implements FantasyPlatformExecutor {
     this.#reader = options.reader;
     this.#allowWrites = options.allowWrites ?? false;
     this.#journal = options.journal ?? new InMemoryYahooExecutionJournal();
+    this.#availability =
+      options.availabilityReader ??
+      new YahooPlayerAvailabilityClient(options.httpClient);
   }
 
   preview(action: FantasyAction): YahooWriteRequest {
@@ -107,8 +132,16 @@ export class YahooFantasyExecutor implements FantasyPlatformExecutor {
       validateActionShape(action);
       const request = buildYahooWriteRequest(action);
       if (mode === 'dry-run') {
-        await validateCurrentState(action, this.#reader);
-        return { status: 'dry-run', action, summary: request.summary };
+        await validateCurrentState(action, this.#reader, this.#availability);
+        return {
+          status: 'dry-run',
+          action,
+          summary: request.summary,
+          validation: 'local',
+          warnings: [
+            'Yahoo remains authoritative for locks, acquisition limits, roster legality, waiver rules, and FAAB balance',
+          ],
+        };
       }
       if (!this.#allowWrites) {
         throw new YahooActionValidationError(
@@ -127,6 +160,13 @@ export class YahooFantasyExecutor implements FantasyPlatformExecutor {
   ): Promise<ActionResult> {
     const { action } = request;
     const fingerprint = fingerprintAction(action);
+    const poisoned = this.#poisoned.get(action.id);
+    if (poisoned !== undefined) {
+      if (poisoned.fingerprint !== fingerprint) {
+        throw idempotencyConflict(action);
+      }
+      return poisoned.result;
+    }
     const running = this.#inFlight.get(action.id);
     if (running !== undefined) {
       if (running.fingerprint !== fingerprint) {
@@ -153,44 +193,121 @@ export class YahooFantasyExecutor implements FantasyPlatformExecutor {
       if (previous.fingerprint !== fingerprint) {
         throw idempotencyConflict(request.action);
       }
-      return previous.result;
+      if (previous.state === 'executed' || previous.state === 'failed') {
+        return previous.result;
+      }
+      return this.#poison(
+        request.action,
+        fingerprint,
+        'JOURNAL_OUTCOME_PENDING',
+        'A prior execution attempt has no durable outcome; reconcile with Yahoo before retrying',
+      );
     }
 
-    await validateCurrentState(request.action, this.#reader);
-
-    const response = await this.#http.sendXml(
-      request.method,
-      request.path,
-      request.body,
+    await validateCurrentState(
+      request.action,
+      this.#reader,
+      this.#availability,
     );
+
+    try {
+      await this.#journal.save({
+        state: 'pending',
+        actionId: request.action.id,
+        fingerprint,
+      });
+    } catch (error) {
+      throw new YahooActionValidationError(
+        'Execution journal could not durably record intent; Yahoo was not called',
+        {
+          code: 'JOURNAL_PREPARE_FAILED',
+          actionId: request.action.id,
+          cause: error,
+        },
+      );
+    }
+
+    let response;
+    try {
+      response = await this.#http.sendXml(
+        request.method,
+        request.path,
+        request.body,
+      );
+    } catch (error) {
+      if (request.method === 'POST' && isAmbiguousWriteFailure(error)) {
+        return this.#poison(
+          request.action,
+          fingerprint,
+          'YAHOO_POST_OUTCOME_UNKNOWN',
+          'Yahoo may have accepted the transaction; reconcile before retrying',
+        );
+      }
+      const result = failed(request.action, error);
+      if (result.status !== 'failed') return result;
+      try {
+        await this.#journal.save({
+          state: 'failed',
+          actionId: request.action.id,
+          fingerprint,
+          result,
+        });
+      } catch {
+        // Yahoo definitively rejected this request; a journal failure cannot
+        // turn that rejection into a successful mutation.
+      }
+      return result;
+    }
+    const externalReference =
+      request.method === 'POST'
+        ? extractYahooTransactionReference(response.body, response.location)
+        : response.location;
     const result: ExecutedResult = {
       status: 'executed',
       action: request.action,
-      ...(response.location === undefined
-        ? {}
-        : { externalReference: response.location }),
+      ...(externalReference === undefined ? {} : { externalReference }),
     };
     try {
       await this.#journal.save({
+        state: 'executed',
         actionId: request.action.id,
         fingerprint,
         result,
       });
       return result;
     } catch {
-      return {
-        ...result,
-        warnings: [
-          'Yahoo accepted the write, but the idempotency journal could not be saved',
-        ],
-      };
+      return this.#poison(
+        request.action,
+        fingerprint,
+        'JOURNAL_COMMIT_FAILED',
+        'Yahoo accepted the write, but its result was not durably recorded; reconcile before retrying',
+        externalReference,
+      );
     }
+  }
+
+  #poison(
+    action: FantasyAction,
+    fingerprint: string,
+    code: string,
+    message: string,
+    externalReference?: string,
+  ): ActionResult {
+    const result: ActionResult = {
+      status: 'execution-uncertain',
+      action,
+      ...(externalReference === undefined ? {} : { externalReference }),
+      error: { code, message, retryable: false },
+    };
+    this.#poisoned.set(action.id, { fingerprint, result });
+    return result;
   }
 }
 
 async function validateCurrentState(
   action: FantasyAction,
   reader: FantasyPlatformReader,
+  availabilityReader: YahooPlayerAvailabilityReader,
 ): Promise<void> {
   const leagueKey = yahooLeagueKey(action.leagueId);
   const teamKey = yahooTeamKey(action.teamId);
@@ -205,22 +322,36 @@ async function validateCurrentState(
   const rostered = new Set(roster.entries.map(({ player }) => player.id));
 
   if (action.type !== 'set-lineup') {
-    if (rostered.has(action.addPlayerId)) {
+    const addPlayerId = addedPlayerId(action);
+    const dropPlayerId = droppedPlayerId(action);
+    if (addPlayerId !== undefined && rostered.has(addPlayerId)) {
       invalid(
         action,
         'PLAYER_ALREADY_ROSTERED',
         'Added player is already rostered',
       );
     }
-    if (
-      action.dropPlayerId !== undefined &&
-      !rostered.has(action.dropPlayerId)
-    ) {
+    if (dropPlayerId !== undefined && !rostered.has(dropPlayerId)) {
       invalid(
         action,
         'DROP_PLAYER_NOT_ROSTERED',
         'Dropped player is not rostered',
       );
+    }
+    if (addPlayerId !== undefined) {
+      const availability = await availabilityReader.getPlayerAvailability(
+        action.leagueId,
+        addPlayerId,
+      );
+      const expected =
+        action.type === 'waiver-claim' ? 'waivers' : 'free-agent';
+      if (availability !== expected) {
+        invalid(
+          action,
+          'PLAYER_AVAILABILITY_MISMATCH',
+          `${action.type} requires a ${expected} target, but Yahoo reports ${availability}`,
+        );
+      }
     }
     return;
   }
@@ -257,6 +388,36 @@ async function validateCurrentState(
         `${player.fullName} is not eligible for ${slot.name}`,
       );
     }
+  }
+
+  const current = await reader.getLineup(action.teamId, action.scoringPeriod);
+  const movedPlayers = new Set(
+    action.assignments.map(({ playerId }) => playerId),
+  );
+  const resultingSlots = new Map(
+    current.assignments
+      .filter(({ playerId }) => !movedPlayers.has(playerId))
+      .map(({ slotId, playerId }) => [slotId, playerId]),
+  );
+  for (const assignment of action.assignments) {
+    if (resultingSlots.has(assignment.slotId)) {
+      invalid(
+        action,
+        'LINEUP_SLOT_OCCUPIED',
+        'A proposed slot remains occupied by an untouched player',
+      );
+    }
+    resultingSlots.set(assignment.slotId, assignment.playerId);
+  }
+  const emptyActiveSlot = league.settings.rosterSlots.find(
+    (slot) => slot.kind === 'active' && !resultingSlots.has(slot.id),
+  );
+  if (emptyActiveSlot !== undefined) {
+    invalid(
+      action,
+      'INCOMPLETE_STARTING_LINEUP',
+      `Resulting lineup leaves ${emptyActiveSlot.name} empty`,
+    );
   }
 }
 
@@ -295,10 +456,9 @@ function validateActionShape(action: FantasyAction): void {
     }
     return;
   }
-  if (
-    action.dropPlayerId !== undefined &&
-    action.addPlayerId === action.dropPlayerId
-  ) {
+  const addPlayerId = addedPlayerId(action);
+  const dropPlayerId = droppedPlayerId(action);
+  if (addPlayerId !== undefined && addPlayerId === dropPlayerId) {
     invalid(action, 'SAME_ADD_DROP_PLAYER', 'Add and drop players must differ');
   }
   if (
@@ -312,6 +472,22 @@ function validateActionShape(action: FantasyAction): void {
       'FAAB bid must be a non-negative integer',
     );
   }
+}
+
+function addedPlayerId(
+  action: Exclude<FantasyAction, { type: 'set-lineup' }>,
+): PlayerId | undefined {
+  if (action.type === 'add-player') return action.playerId;
+  if (action.type === 'drop-player') return undefined;
+  return action.addPlayerId;
+}
+
+function droppedPlayerId(
+  action: Exclude<FantasyAction, { type: 'set-lineup' }>,
+): PlayerId | undefined {
+  if (action.type === 'drop-player') return action.playerId;
+  if (action.type === 'add-player') return undefined;
+  return action.dropPlayerId;
 }
 
 function ensureUnique(
@@ -378,4 +554,14 @@ function failed(action: FantasyAction, error: unknown): ActionResult {
           (status !== undefined && status >= 500)),
     },
   };
+}
+
+function isAmbiguousWriteFailure(error: unknown): boolean {
+  if (!(error instanceof YahooApiError)) return false;
+  return (
+    error.code === 'API_TRANSPORT_ERROR' ||
+    error.status === 408 ||
+    error.status === 429 ||
+    (error.status !== undefined && error.status >= 500)
+  );
 }

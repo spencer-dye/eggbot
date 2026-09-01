@@ -78,4 +78,29 @@ describe('buildYahooWriteRequest', () => {
     expect(request.body).toContain('<player_key>449.p.&amp;10</player_key>');
     expect(request.body).not.toContain('<players>');
   });
+
+  it('maps standalone add and drop actions independently', () => {
+    const common = {
+      leagueId: yahooLeagueId(leagueKey),
+      teamId: yahooTeamId(teamKey),
+      playerId: yahooPlayerId('449.p.10'),
+    };
+    const add = buildYahooWriteRequest({
+      ...common,
+      id: actionId('add-1'),
+      type: 'add-player',
+    });
+    const drop = buildYahooWriteRequest({
+      ...common,
+      id: actionId('drop-1'),
+      type: 'drop-player',
+    });
+
+    expect(add.body).toContain('<type>add</type>');
+    expect(add.body).toContain('<destination_team_key>');
+    expect(add.body).not.toContain('<players>');
+    expect(drop.body).toContain('<type>drop</type>');
+    expect(drop.body).toContain('<source_team_key>');
+    expect(drop.body).not.toContain('<players>');
+  });
 });

@@ -12,7 +12,7 @@ Add OAuth and normalized read-only access to leagues, teams, rosters, standings,
 
 ## Phase 2 — Yahoo safe-write integration
 
-Implemented lineup changes and supported transactions with state validation, mandatory execution modes, action-ID idempotency, an injected execution journal, explicit write enablement, and dry-run request previews.
+Implemented lineup changes and standalone add, drop, add/drop, and waiver transactions with ownership validation, mandatory execution modes, write-ahead action-ID idempotency, poisoned uncertain outcomes, returned transaction references, explicit write enablement, and locally scoped dry-run request previews.
 
 ## Phase 3 — League snapshots
 

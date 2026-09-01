@@ -5,6 +5,12 @@ export {
   type YahooFantasyReaderOptions,
 } from './adapter.js';
 export {
+  parseYahooPlayerAvailability,
+  YahooPlayerAvailabilityClient,
+  type YahooPlayerAvailability,
+  type YahooPlayerAvailabilityReader,
+} from './availability.js';
+export {
   YahooActionValidationError,
   YahooApiError,
   YahooAuthenticationError,
@@ -46,6 +52,7 @@ export {
   buildYahooWriteRequest,
   type YahooWriteRequest,
 } from './write-requests.js';
+export { extractYahooTransactionReference } from './write-response.js';
 
 export const yahooAdapterMetadata: PlatformAdapterMetadata = Object.freeze({
   id: 'yahoo',

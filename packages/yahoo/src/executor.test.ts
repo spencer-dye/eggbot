@@ -10,7 +10,11 @@ import {
 } from '@eggbot/core';
 import type { FantasyPlatformReader } from '@eggbot/platform';
 
-import { YahooFantasyExecutor } from './executor.js';
+import type { YahooPlayerAvailability } from './availability.js';
+import {
+  YahooFantasyExecutor,
+  type YahooExecutionJournal,
+} from './executor.js';
 import { YahooHttpClient } from './http.js';
 import {
   yahooLeagueId,
@@ -54,6 +58,7 @@ describe('YahooFantasyExecutor', () => {
     const result = await executor.execute([action], { mode: 'dry-run' });
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ status: 'dry-run', action });
+    expect(result[0]).toMatchObject({ validation: 'local' });
     expect(result[0]?.status === 'dry-run' && result[0].summary).toContain(
       'week 7',
     );
@@ -81,14 +86,24 @@ describe('YahooFantasyExecutor', () => {
   it('writes once when the same action id and payload are retried', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(new Response(undefined, { status: 201 }));
+      .mockResolvedValue(
+        new Response(
+          '<fantasy_content><transaction><transaction_key>449.l.123.tr.9</transaction_key></transaction></fantasy_content>',
+          { status: 201 },
+        ),
+      );
     const executor = createExecutor(fetchMock, true);
     const action = addDropAction();
 
     const first = await executor.execute([action], { mode: 'execute' });
     const second = await executor.execute([action], { mode: 'execute' });
 
-    expect(first).toMatchObject([{ status: 'executed' }]);
+    expect(first).toMatchObject([
+      {
+        status: 'executed',
+        externalReference: 'yahoo:transaction:449.l.123.tr.9',
+      },
+    ]);
     expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -129,11 +144,105 @@ describe('YahooFantasyExecutor', () => {
     ]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('poisons a transaction when Yahoo succeeds but journal commit fails', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          '<transaction><transaction_key>449.l.123.w.c.2_10</transaction_key></transaction>',
+          { status: 201 },
+        ),
+      );
+    let saves = 0;
+    const journal: YahooExecutionJournal = {
+      load: () => Promise.resolve(undefined),
+      save: () => {
+        saves += 1;
+        return saves === 1
+          ? Promise.resolve()
+          : Promise.reject(new Error('disk unavailable'));
+      },
+    };
+    const executor = createExecutor(fetchMock, true, 'free-agent', journal);
+    const action = addDropAction();
+
+    const first = await executor.execute([action], { mode: 'execute' });
+    const retry = await executor.execute([action], { mode: 'execute' });
+
+    expect(first).toMatchObject([
+      {
+        status: 'execution-uncertain',
+        externalReference: 'yahoo:transaction:449.l.123.w.c.2_10',
+        error: { code: 'JOURNAL_COMMIT_FAILED', retryable: false },
+      },
+    ]);
+    expect(retry).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a durable pending outcome', async () => {
+    const action = addDropAction();
+    let record: Awaited<ReturnType<YahooExecutionJournal['load']>>;
+    const journal: YahooExecutionJournal = {
+      load: () => Promise.resolve(record),
+      save: (next) => {
+        record = next;
+        return Promise.resolve();
+      },
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError('connection reset'));
+    const firstExecutor = createExecutor(
+      fetchMock,
+      true,
+      'free-agent',
+      journal,
+    );
+    await firstExecutor.execute([action], { mode: 'execute' });
+    const restartedExecutor = createExecutor(
+      fetchMock,
+      true,
+      'free-agent',
+      journal,
+    );
+
+    const result = await restartedExecutor.execute([action], {
+      mode: 'execute',
+    });
+
+    expect(result).toMatchObject([
+      {
+        status: 'execution-uncertain',
+        error: { code: 'JOURNAL_OUTCOME_PENDING', retryable: false },
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects free-agent actions for players currently on waivers', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const result = await createExecutor(fetchMock, true, 'waivers').execute(
+      [addDropAction()],
+      { mode: 'execute' },
+    );
+
+    expect(result).toMatchObject([
+      {
+        status: 'failed',
+        error: { code: 'PLAYER_AVAILABILITY_MISMATCH' },
+      },
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 function createExecutor(
   fetchMock: ReturnType<typeof vi.fn>,
   allowWrites: boolean,
+  availability: YahooPlayerAvailability = 'free-agent',
+  journal?: YahooExecutionJournal,
 ) {
   const httpClient = new YahooHttpClient({
     tokenProvider: { getAccessToken: () => Promise.resolve('token') },
@@ -143,6 +252,10 @@ function createExecutor(
     httpClient,
     reader: readerFixture(),
     allowWrites,
+    availabilityReader: {
+      getPlayerAvailability: () => Promise.resolve(availability),
+    },
+    ...(journal === undefined ? {} : { journal }),
   });
 }
 
@@ -153,7 +266,12 @@ function readerFixture(): FantasyPlatformReader {
     getLeague: () => Promise.resolve(league),
     getTeams: () => Promise.resolve([]),
     getRoster: () => Promise.resolve(roster),
-    getLineup: () => Promise.reject(new Error('unused')),
+    getLineup: () =>
+      Promise.resolve({
+        teamId,
+        scoringPeriod: '7',
+        assignments: [{ playerId: rosteredPlayer.id, slotId }],
+      }),
     getMatchups: () => Promise.resolve([]),
     getStandings: () => Promise.resolve([]),
     getAvailablePlayers: () => Promise.resolve([]),

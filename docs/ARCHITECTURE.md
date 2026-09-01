@@ -45,11 +45,13 @@ The Yahoo package implements read capability and the Phase 2 write boundary. OAu
 
 ## Phase 2 public API changes
 
-The Phase 0 executor signature could not express whether a call was a dry run or a mutation. Before any concrete executor existed, Phase 2 makes the mode mandatory: `execute(actions, { mode: 'dry-run' | 'execute' })`. There is deliberately no default. Core `ActionResult` adds a `dry-run` variant so validation is not confused with execution.
+The Phase 0 executor signature could not express whether a call was a dry run or a mutation. Before any concrete executor existed, Phase 2 makes the mode mandatory: `execute(actions, { mode: 'dry-run' | 'execute' })`. There is deliberately no default. Core `ActionResult` adds `dry-run` and `execution-uncertain` variants so local validation, confirmed execution, and an ambiguous mutation outcome cannot be confused.
 
-Action IDs are execution idempotency keys. The Yahoo executor fingerprints the full action, deduplicates concurrent calls, reuses prior successful results through an injected execution journal, and rejects reuse of an ID with different action data. Lineup PUTs are naturally repeatable; transaction POSTs require a durable journal in production to avoid duplicate retries across process restarts.
+Action IDs are execution idempotency keys. The Yahoo executor fingerprints the full action, deduplicates concurrent calls, reuses prior successful results through an injected execution journal, and rejects reuse of an ID with different action data. Before sending a mutation it durably records a `pending` intent. If a transaction POST has an ambiguous transport outcome, or Yahoo accepts it but the executed result cannot be committed, the action becomes `execution-uncertain`. It is poisoned in memory and its durable pending record blocks automatic execution after restart. Reconciliation with Yahoo is required before an operator resolves that journal entry.
 
-Yahoo write support follows its documented roster `PUT` and league-transactions `POST` XML formats. Runtime writes additionally require an explicit `allowWrites` kill-switch. Yahoo's current developer access portal states that write access is not presently available for new applications, so credentials must independently have a Yahoo write grant. Dry-run performs state validation and request serialization without sending PUT or POST.
+Yahoo write support follows its documented roster `PUT` and league-transactions `POST` XML formats. Runtime writes additionally require an explicit `allowWrites` kill-switch. Yahoo's current developer access portal states that write access is not presently available for new applications, so credentials must independently have a Yahoo write grant. Dry-run performs local state validation and request serialization without sending PUT or POST. Its result is explicitly labeled `validation: 'local'`: Yahoo remains authoritative for locks, acquisition limits, complete roster legality, waiver rules, and FAAB balance.
+
+Phase 2 exposed a concrete deficiency in the original action vocabulary. Yahoo uses the same POST shape for an immediate free-agent acquisition and a pending waiver claim, based on current ownership state; `WaiverClaimAction` therefore cannot safely double as a no-drop add. Core adds explicit `AddPlayerAction` and `DropPlayerAction`. The Yahoo executor reads the target player's league ownership and requires free-agent state for add/add-drop actions and waiver state for waiver claims. Yahoo transaction keys returned in XML, JSON, or `Location` are normalized into `externalReference`.
 
 ## Phase 1 public API additions
 
@@ -77,7 +79,8 @@ Policy evaluation is action-scoped: every proposed action has its own approved/r
 
 ## Deferred hardening decisions
 
-- Expand `LeagueSettings` only when snapshot, waiver, trade, playoff, lock, IR, and keeper use cases establish provider-independent requirements; do not mirror Yahoo's settings payload.
+- Before autonomous waiver management, add provider-independent waiver system, FAAB balance, priority, and acquisition-limit state based on Phase 3 snapshots; do not mirror Yahoo's full settings payload. Phase 2 deliberately labels dry-runs as local validation until that state exists.
+- Extend lineup preflight with provider lock state when Phase 3 establishes a normalized representation. Phase 2 validates the resulting slot allocation and filled starters but Yahoo remains authoritative for locks.
 - Keep `PlatformReference` and `FantasyGame.platformReference` until a second adapter provides evidence for a shared `GameId` design.
 - Keep Yahoo's recursive collection traversal while sanitized fixtures and the opt-in live suite validate actual responses. Replace it with context-specific traversal if real payloads reveal duplicates or ambiguous nesting.
 - Further constrain injectable Yahoo base URLs if transports become consumer-configurable outside tests. Current API paths are generated internally and explicit absolute paths are rejected.

@@ -210,6 +210,8 @@ function parseWriteAction(
 ): FantasyAction | undefined {
   if (
     command !== 'lineup-change' &&
+    command !== 'add' &&
+    command !== 'drop' &&
     command !== 'add-drop' &&
     command !== 'waiver'
   ) {
@@ -257,7 +259,17 @@ function parseWriteAction(
     };
   }
 
-  const addPlayerId = asPlayerId(requireArgument(args, 2, 'add player key'));
+  const player = asPlayerId(requireArgument(args, 2, 'player key'));
+  if (command === 'add' || command === 'drop') {
+    return {
+      id,
+      type: command === 'add' ? 'add-player' : 'drop-player',
+      leagueId: league,
+      teamId: team,
+      playerId: player,
+    };
+  }
+  const addPlayerId = player;
   if (command === 'add-drop') {
     return {
       id,
@@ -468,6 +480,10 @@ function printHelp(): void {
   pnpm cli yahoo transactions <league-key> [--limit count]
   pnpm cli yahoo lineup-change <league-key> <team-key> <week>
       <player-key=Yahoo-position,...> [--action-id id] [--execute]
+  pnpm cli yahoo add <league-key> <team-key> <player-key>
+      [--action-id id] [--execute]
+  pnpm cli yahoo drop <league-key> <team-key> <player-key>
+      [--action-id id] [--execute]
   pnpm cli yahoo add-drop <league-key> <team-key> <add-player-key>
       <drop-player-key> [--action-id id] [--execute]
   pnpm cli yahoo waiver <league-key> <team-key> <add-player-key>

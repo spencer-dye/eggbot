@@ -1,6 +1,8 @@
 export type {
   ActionResult,
+  AddPlayerAction,
   AddDropAction,
+  DropPlayerAction,
   FantasyAction,
   FantasyDecision,
   SetLineupAction,
