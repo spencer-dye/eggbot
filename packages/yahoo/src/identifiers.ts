@@ -33,6 +33,49 @@ export function yahooRosterSlotId(
 
 export const yahooLeagueKey = (id: LeagueId): string => decode('league', id);
 export const yahooTeamKey = (id: TeamId): string => decode('team', id);
+export const yahooPlayerKey = (id: PlayerId): string => decode('player', id);
+
+export interface YahooRosterSlotReference {
+  readonly leagueKey: string;
+  readonly position: string;
+  readonly ordinal: number;
+}
+
+export function yahooRosterSlotReference(
+  id: RosterSlotId,
+): YahooRosterSlotReference {
+  const prefix = 'yahoo:slot:';
+  if (!id.startsWith(prefix)) {
+    throw new YahooResponseValidationError(
+      'Expected a Yahoo roster slot identifier',
+      {
+        resource: 'roster_slot_id',
+        details: id,
+      },
+    );
+  }
+  const value = id.slice(prefix.length);
+  const lastSeparator = value.lastIndexOf(':');
+  const positionSeparator = value.lastIndexOf(':', lastSeparator - 1);
+  const leagueKey = value.slice(0, positionSeparator);
+  const position = value.slice(positionSeparator + 1, lastSeparator);
+  const ordinal = Number(value.slice(lastSeparator + 1));
+  if (
+    positionSeparator <= 0 ||
+    position.length === 0 ||
+    !Number.isSafeInteger(ordinal) ||
+    ordinal < 1
+  ) {
+    throw new YahooResponseValidationError(
+      'Yahoo roster slot identifier was malformed',
+      {
+        resource: 'roster_slot_id',
+        details: id,
+      },
+    );
+  }
+  return { leagueKey, position, ordinal };
+}
 
 export function yahooLeagueKeyFromTeamKey(teamKey: string): string {
   const marker = teamKey.lastIndexOf('.t.');

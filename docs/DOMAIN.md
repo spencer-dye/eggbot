@@ -16,7 +16,7 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **Transaction** records a completed or pending league transaction as one or more normalized player moves. It is observed platform history, not an executable `FantasyAction`.
 - **FantasyAction** is inspectable intent to change platform state. Phase 0 models lineup setting, add/drop, and waiver-claim actions.
 - **FantasyDecision** records a decision identifier, timestamp, rationale, and proposed actions. It does not approve or execute them.
-- **ActionResult** records either an executed action with optional external context, or a failed attempt with a code, message, and retryability signal.
+- **ActionResult** records a validated dry run, an executed action with optional external context, or a failed attempt with a code, message, and retryability signal.
 
 ## Important distinctions
 
@@ -35,6 +35,8 @@ A transaction is historical state read from a platform. An action is EggBot's pr
 ### Proposal versus execution
 
 Actions inside a decision are proposed. Policy evaluation records an approved or rejected result for every action and retains all rejection issues. Orchestration explicitly derives the approved subset. Only a platform executor can attempt an approved action, producing an `ActionResult`. These stages stay distinct for audit, dry-run, replay, and safety controls.
+
+An action ID is also its execution idempotency key. Reusing an ID for different action data is an error. Consumers that retry transaction writes across process restarts must provide durable execution-journal storage.
 
 ### Platform data versus EggBot domain data
 

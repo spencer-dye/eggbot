@@ -41,7 +41,15 @@ flowchart TD
 
 The platform contract separates `FantasyPlatformReader` from `FantasyPlatformExecutor`. Read-only applications therefore need no write authority. Concrete adapters return core types and translate `FantasyAction` data into provider operations internally.
 
-The Yahoo package implements the Phase 1 read capability. OAuth, token refresh, HTTP transport, response validation, Yahoo identifier codecs, and mappings remain inside the adapter. Yahoo write execution remains unavailable and is deferred to Phase 2.
+The Yahoo package implements read capability and the Phase 2 write boundary. OAuth, token refresh, HTTP transport, response validation, Yahoo identifier codecs, mappings, XML serialization, state validation, and idempotency remain inside the adapter.
+
+## Phase 2 public API changes
+
+The Phase 0 executor signature could not express whether a call was a dry run or a mutation. Before any concrete executor existed, Phase 2 makes the mode mandatory: `execute(actions, { mode: 'dry-run' | 'execute' })`. There is deliberately no default. Core `ActionResult` adds a `dry-run` variant so validation is not confused with execution.
+
+Action IDs are execution idempotency keys. The Yahoo executor fingerprints the full action, deduplicates concurrent calls, reuses prior successful results through an injected execution journal, and rejects reuse of an ID with different action data. Lineup PUTs are naturally repeatable; transaction POSTs require a durable journal in production to avoid duplicate retries across process restarts.
+
+Yahoo write support follows its documented roster `PUT` and league-transactions `POST` XML formats. Runtime writes additionally require an explicit `allowWrites` kill-switch. Yahoo's current developer access portal states that write access is not presently available for new applications, so credentials must independently have a Yahoo write grant. Dry-run performs state validation and request serialization without sending PUT or POST.
 
 ## Phase 1 public API additions
 
@@ -57,7 +65,7 @@ Yahoo's irregular JSON collection encoding, resource keys, pagination limits, OA
 
 `YahooOAuthClient` implements Yahoo's authorization-code exchange and proactive access-token refresh. Callers inject an optional `YahooTokenStore`; this keeps token persistence out of the adapter while ensuring refresh-token rotation can be saved. Concurrent callers share one refresh request. Client credentials and tokens never enter domain objects.
 
-`YahooHttpClient` accepts only relative Fantasy API paths, adds the JSON format selector and Bearer token, and retries a GET once after a 401 using a forced refresh. It does not expose arbitrary methods and cannot issue writes. Successful responses must contain Yahoo's `fantasy_content` envelope before reaching resource mappers.
+`YahooHttpClient` accepts only relative Fantasy API paths, adds Bearer authentication, and retries once after a 401 using a forced refresh. Reads request JSON and require Yahoo's `fantasy_content` envelope before reaching resource mappers. Writes expose only the adapter's required XML `PUT` and `POST` methods; arbitrary HTTP methods and absolute URLs remain unavailable.
 
 `YahooFantasyReader` builds Yahoo-specific resource and collection URLs, performs pagination, and maps the validated boundary data into public EggBot types. Player availability maps explicitly to Yahoo's available, free-agent, or waiver filters. Multi-position queries fan out into provider-specific calls and deduplicate normalized players rather than silently ignoring requested positions.
 

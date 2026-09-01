@@ -1,13 +1,25 @@
 import { resolve } from 'node:path';
 
 import { sumProjectedStartingLineupPoints } from '@eggbot/analytics';
-import { leagueId, teamId, type Lineup, type Position } from '@eggbot/core';
 import {
+  actionId,
+  leagueId,
+  playerId,
+  teamId,
+  type FantasyAction,
+  type Lineup,
+  type Position,
+} from '@eggbot/core';
+import {
+  buildYahooWriteRequest,
   YahooFantasyReader,
+  YahooFantasyExecutor,
   YahooHttpClient,
   YahooOAuthClient,
   yahooAdapterMetadata,
   yahooLeagueId,
+  yahooPlayerId,
+  yahooRosterSlotId,
   yahooTeamId,
   type YahooOAuthConfig,
   type YahooTokenSet,
@@ -35,8 +47,8 @@ async function main(args: readonly string[]): Promise<void> {
         [],
       ),
       platformBoundary: yahooAdapterMetadata,
-      phase: 1,
-      writeOperations: false,
+      phase: 2,
+      writeOperations: 'guarded',
     });
     return;
   }
@@ -48,6 +60,20 @@ async function main(args: readonly string[]): Promise<void> {
 
   const command = args[1];
   const commandArgs = args.slice(2);
+  const writeAction = parseWriteAction(command, commandArgs);
+  const shouldExecute = commandArgs.includes('--execute');
+  if (writeAction !== undefined && !shouldExecute) {
+    printJson(buildYahooWriteRequest(writeAction));
+    return;
+  }
+  if (writeAction !== undefined) {
+    if (readOption(commandArgs, '--action-id') === undefined) {
+      throw new Error('--action-id is required with --execute');
+    }
+    if (process.env.YAHOO_ENABLE_WRITES !== '1') {
+      throw new Error('--execute also requires YAHOO_ENABLE_WRITES=1');
+    }
+  }
   const config = yahooConfigFromEnvironment();
   const initialTokens = tokensFromEnvironment();
   const tokenStore = createFileTokenStore({
@@ -81,9 +107,18 @@ async function main(args: readonly string[]): Promise<void> {
     return;
   }
 
-  const reader = new YahooFantasyReader({
-    httpClient: new YahooHttpClient({ tokenProvider: oauth }),
-  });
+  const httpClient = new YahooHttpClient({ tokenProvider: oauth });
+  const reader = new YahooFantasyReader({ httpClient });
+
+  if (writeAction !== undefined) {
+    const executor = new YahooFantasyExecutor({
+      httpClient,
+      reader,
+      allowWrites: true,
+    });
+    printJson(await executor.execute([writeAction], { mode: 'execute' }));
+    return;
+  }
 
   switch (command) {
     case 'games':
@@ -169,6 +204,86 @@ async function main(args: readonly string[]): Promise<void> {
   }
 }
 
+function parseWriteAction(
+  command: string,
+  args: readonly string[],
+): FantasyAction | undefined {
+  if (
+    command !== 'lineup-change' &&
+    command !== 'add-drop' &&
+    command !== 'waiver'
+  ) {
+    return undefined;
+  }
+  const id = actionId(readOption(args, '--action-id') ?? `preview-${command}`);
+  const league = asLeagueId(requireArgument(args, 0, 'league key'));
+  const team = asTeamId(requireArgument(args, 1, 'team key'));
+
+  if (command === 'lineup-change') {
+    const scoringPeriod = requireArgument(args, 2, 'week');
+    if (
+      !Number.isSafeInteger(Number(scoringPeriod)) ||
+      Number(scoringPeriod) < 1
+    ) {
+      throw new Error('week must be a positive integer');
+    }
+    const assignmentsText = requireArgument(args, 3, 'assignments');
+    const ordinals = new Map<string, number>();
+    const assignments = assignmentsText.split(',').map((item) => {
+      const separator = item.lastIndexOf('=');
+      if (separator < 1 || separator === item.length - 1) {
+        throw new Error('assignments must use player-key=Yahoo-position');
+      }
+      const playerKey = item.slice(0, separator);
+      const position = item.slice(separator + 1);
+      const ordinal = (ordinals.get(position) ?? 0) + 1;
+      ordinals.set(position, ordinal);
+      return {
+        playerId: asPlayerId(playerKey),
+        slotId: yahooRosterSlotId(
+          writeLeagueKey(requireArgument(args, 0, 'league key')),
+          position,
+          ordinal,
+        ),
+      };
+    });
+    return {
+      id,
+      type: 'set-lineup',
+      leagueId: league,
+      teamId: team,
+      scoringPeriod,
+      assignments,
+    };
+  }
+
+  const addPlayerId = asPlayerId(requireArgument(args, 2, 'add player key'));
+  if (command === 'add-drop') {
+    return {
+      id,
+      type: 'add-drop',
+      leagueId: league,
+      teamId: team,
+      addPlayerId,
+      dropPlayerId: asPlayerId(requireArgument(args, 3, 'drop player key')),
+    };
+  }
+
+  const dropPlayer = positionalArgument(args, 3);
+  const bid = readNonNegativeNumberOption(args, '--bid');
+  return {
+    id,
+    type: 'waiver-claim',
+    leagueId: league,
+    teamId: team,
+    addPlayerId,
+    ...(dropPlayer === undefined
+      ? {}
+      : { dropPlayerId: asPlayerId(dropPlayer) }),
+    ...(bid === undefined ? {} : { bid }),
+  };
+}
+
 function yahooConfigFromEnvironment(): YahooOAuthConfig {
   return {
     clientId: requireEnvironment('YAHOO_CLIENT_ID'),
@@ -214,6 +329,26 @@ function asTeamId(value: string) {
   return value.startsWith('yahoo:team:') ? teamId(value) : yahooTeamId(value);
 }
 
+function asPlayerId(value: string) {
+  return value.startsWith('yahoo:player:')
+    ? playerId(value)
+    : yahooPlayerId(value);
+}
+
+function writeLeagueKey(value: string): string {
+  return value.startsWith('yahoo:league:')
+    ? value.slice('yahoo:league:'.length)
+    : value;
+}
+
+function positionalArgument(
+  args: readonly string[],
+  index: number,
+): string | undefined {
+  const value = args[index];
+  return value === undefined || value.startsWith('--') ? undefined : value;
+}
+
 function requireArgument(
   args: readonly string[],
   index: number,
@@ -252,6 +387,19 @@ function readNumberOption(
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 1) {
     throw new Error(`${name} must be a positive integer`);
+  }
+  return number;
+}
+
+function readNonNegativeNumberOption(
+  args: readonly string[],
+  name: string,
+): number | undefined {
+  const value = readOption(args, name);
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
   }
   return number;
 }
@@ -318,6 +466,15 @@ function printHelp(): void {
   pnpm cli yahoo players <league-key> [--availability available|free-agent|waivers]
       [--positions RB,WR] [--search text] [--limit count]
   pnpm cli yahoo transactions <league-key> [--limit count]
+  pnpm cli yahoo lineup-change <league-key> <team-key> <week>
+      <player-key=Yahoo-position,...> [--action-id id] [--execute]
+  pnpm cli yahoo add-drop <league-key> <team-key> <add-player-key>
+      <drop-player-key> [--action-id id] [--execute]
+  pnpm cli yahoo waiver <league-key> <team-key> <add-player-key>
+      [drop-player-key] [--bid amount] [--action-id id] [--execute]
+
+Write commands print an exact XML preview by default. Live writes require both
+--execute and --action-id, plus YAHOO_ENABLE_WRITES=1.
 
 Environment:
   YAHOO_CLIENT_ID              required for Yahoo commands
@@ -326,6 +483,7 @@ Environment:
   YAHOO_ACCESS_TOKEN           optional if the token file exists
   YAHOO_REFRESH_TOKEN          enables automatic refresh
   YAHOO_TOKEN_EXPIRES_AT       epoch milliseconds or ISO time
+  YAHOO_ENABLE_WRITES          must be 1 in addition to --execute
   YAHOO_TOKEN_FILE             defaults to ${defaultTokenFile}`);
 }
 

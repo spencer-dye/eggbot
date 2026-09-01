@@ -44,10 +44,16 @@ export interface FantasyDecision {
 
 export type ActionResult =
   | {
+      readonly status: 'dry-run';
+      readonly action: FantasyAction;
+      readonly summary: string;
+    }
+  | {
       readonly status: 'executed';
       readonly action: FantasyAction;
       readonly roster?: Roster;
       readonly externalReference?: string;
+      readonly warnings?: readonly string[];
     }
   | {
       readonly status: 'failed';

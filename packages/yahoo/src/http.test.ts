@@ -55,6 +55,59 @@ describe('YahooHttpClient', () => {
       resource: 'fantasy_content',
     });
   });
+
+  it('sends XML writes and refreshes once after a 401', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response('<ok/>', {
+          status: 201,
+          headers: { location: '/transaction/1' },
+        }),
+      );
+    const getAccessToken = vi
+      .fn<(force?: boolean) => Promise<string>>()
+      .mockResolvedValueOnce('expired')
+      .mockResolvedValueOnce('refreshed');
+    const client = new YahooHttpClient({
+      tokenProvider: { getAccessToken },
+      fetch: fetchMock,
+    });
+
+    await expect(
+      client.sendXml('POST', '/league/1/transactions', '<transaction/>'),
+    ).resolves.toEqual({
+      status: 201,
+      location: '/transaction/1',
+      body: '<ok/>',
+    });
+    expect(getAccessToken.mock.calls).toEqual([[false], [true]]);
+    const [, init] = fetchMock.mock.calls[1] ?? [];
+    expect(init).toMatchObject({ method: 'POST', body: '<transaction/>' });
+    expect(init?.headers).toMatchObject({
+      authorization: 'Bearer refreshed',
+      'content-type': 'application/xml; charset=utf-8',
+    });
+  });
+
+  it('returns a structured error for a rejected XML write', async () => {
+    const client = new YahooHttpClient({
+      tokenProvider: { getAccessToken: () => Promise.resolve('token') },
+      fetch: vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response('<error/>', { status: 403 })),
+    });
+
+    await expect(
+      client.sendXml('PUT', '/team/1/roster', '<roster/>'),
+    ).rejects.toMatchObject({
+      name: 'YahooApiError',
+      code: 'API_WRITE_FAILED',
+      status: 403,
+      responseBody: '<error/>',
+    });
+  });
 });
 
 function jsonResponse(body: unknown, status = 200): Response {

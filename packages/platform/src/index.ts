@@ -65,7 +65,14 @@ export interface FantasyPlatformReader {
 
 /** The only platform capability authorized to cause roster side effects. */
 export interface FantasyPlatformExecutor {
-  execute(actions: readonly FantasyAction[]): Promise<readonly ActionResult[]>;
+  execute(
+    actions: readonly FantasyAction[],
+    options: ExecutionOptions,
+  ): Promise<readonly ActionResult[]>;
+}
+
+export interface ExecutionOptions {
+  readonly mode: 'dry-run' | 'execute';
 }
 
 export interface FantasyPlatform

@@ -13,6 +13,12 @@ export interface YahooHttpClientOptions {
   readonly baseUrl?: string;
 }
 
+export interface YahooWriteResponse {
+  readonly status: number;
+  readonly location?: string;
+  readonly body?: unknown;
+}
+
 export class YahooHttpClient {
   readonly #tokenProvider: YahooAccessTokenProvider;
   readonly #fetch: typeof fetch;
@@ -40,9 +46,9 @@ export class YahooHttpClient {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
 
-    let response = await this.#request(url, false);
+    let response = await this.#request(url, false, { method: 'GET' });
     if (response.status === 401) {
-      response = await this.#request(url, true);
+      response = await this.#request(url, true, { method: 'GET' });
     }
 
     const body = await readBody(response);
@@ -71,13 +77,63 @@ export class YahooHttpClient {
     }
   }
 
-  async #request(url: URL, forceRefresh: boolean): Promise<Response> {
+  async sendXml(
+    method: 'POST' | 'PUT',
+    path: string,
+    body: string,
+  ): Promise<YahooWriteResponse> {
+    const url = this.#relativeUrl(path);
+    const init: RequestInit = {
+      method,
+      body,
+      headers: {
+        accept: 'application/json, application/xml, text/xml',
+        'content-type': 'application/xml; charset=utf-8',
+      },
+    };
+    let response = await this.#request(url, false, init);
+    if (response.status === 401) {
+      response = await this.#request(url, true, init);
+    }
+    const responseBody = await readFlexibleBody(response);
+    if (!response.ok) {
+      throw new YahooApiError(
+        `Yahoo API write failed with status ${response.status}`,
+        {
+          code: 'API_WRITE_FAILED',
+          status: response.status,
+          responseBody,
+        },
+      );
+    }
+    const location = response.headers.get('location') ?? undefined;
+    return {
+      status: response.status,
+      ...(location === undefined ? {} : { location }),
+      ...(responseBody === undefined ? {} : { body: responseBody }),
+    };
+  }
+
+  #relativeUrl(path: string): URL {
+    if (path.startsWith('http:') || path.startsWith('https:')) {
+      throw new YahooApiError('Yahoo client paths must be relative', {
+        code: 'INVALID_API_PATH',
+      });
+    }
+    return new URL(path.replace(/^\//, ''), this.#baseUrl);
+  }
+
+  async #request(
+    url: URL,
+    forceRefresh: boolean,
+    init: RequestInit,
+  ): Promise<Response> {
     const accessToken = await this.#tokenProvider.getAccessToken(forceRefresh);
     try {
       return await this.#fetch(url, {
-        method: 'GET',
+        ...init,
         headers: {
-          accept: 'application/json',
+          ...init.headers,
           authorization: `Bearer ${accessToken}`,
         },
       });
@@ -88,6 +144,20 @@ export class YahooHttpClient {
       });
     }
   }
+}
+
+async function readFlexibleBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (text.length === 0) return undefined;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('json')) {
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      return text;
+    }
+  }
+  return text;
 }
 
 async function readBody(response: Response): Promise<unknown> {

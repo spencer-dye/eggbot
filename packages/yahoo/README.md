@@ -1,13 +1,13 @@
 # `@eggbot/yahoo`
 
-Read-only Yahoo Fantasy Sports adapter for EggBot.
+Yahoo Fantasy Sports adapter for EggBot.
 
-Phase 1 includes:
+Phase 1 reads include:
 
 - OAuth 2.0 authorization URL and code exchange
 - proactive access-token refresh with refresh-token rotation
 - injected token persistence and `fetch` boundaries
-- authenticated GET-only Fantasy API transport
+- authenticated Fantasy API transport
 - validation of Yahoo JSON envelopes and resources
 - normalized games, leagues/settings, teams, rosters/lineups, standings, matchups, available/free-agent/waiver players, and transactions
 
@@ -15,7 +15,9 @@ Construct `YahooOAuthClient`, pass it to `YahooHttpClient`, and inject that into
 
 The adapter requests Yahoo's JSON representation and normalizes its array-of-fragments resource encoding internally. Raw Yahoo payload types and collection shapes are not exported. EggBot identifiers are namespaced separately from Yahoo resource keys.
 
-There is intentionally no `FantasyPlatformExecutor` implementation and adapter metadata reports `execute: false`.
+`YahooFantasyExecutor` implements explicit dry-run and execute modes for weekly lineup changes, add/drop transactions, and waiver claims. Execute mode additionally requires `allowWrites: true`; dry-run remains the safe default at the CLI boundary. Action IDs are idempotency keys. The default journal is in-memory, so production consumers must inject a durable `YahooExecutionJournal`.
+
+Yahoo currently documents these write endpoints but does not grant write access to new applications. Dry-runs work with read credentials; live execution requires credentials Yahoo has explicitly authorized for writes.
 
 ## Live read smoke test
 

@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 and 1 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 2 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -12,7 +12,7 @@ Add OAuth and normalized read-only access to leagues, teams, rosters, standings,
 
 ## Phase 2 — Yahoo safe-write integration
 
-Add lineup changes and supported transactions with validation, idempotency considerations, and dry-run capability.
+Implemented lineup changes and supported transactions with state validation, mandatory execution modes, action-ID idempotency, an injected execution journal, explicit write enablement, and dry-run request previews.
 
 ## Phase 3 — League snapshots
 

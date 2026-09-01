@@ -49,3 +49,18 @@ export class YahooResponseValidationError extends Error {
     this.details = options.details;
   }
 }
+
+export class YahooActionValidationError extends Error {
+  readonly code: string;
+  readonly actionId: string | undefined;
+
+  constructor(
+    message: string,
+    options: { code: string; actionId?: string; cause?: unknown },
+  ) {
+    super(message, { cause: options.cause });
+    this.name = 'YahooActionValidationError';
+    this.code = options.code;
+    this.actionId = options.actionId;
+  }
+}
