@@ -18,26 +18,29 @@ export interface PolicyIssue {
   readonly actionId: ActionId;
 }
 
-export type PolicyEvaluation =
+export type ActionPolicyEvaluation =
   | {
+      readonly action: FantasyAction;
       readonly status: 'approved';
-      readonly decision: FantasyDecision;
-      readonly approvedActions: readonly FantasyAction[];
       readonly issues: readonly [];
     }
   | {
+      readonly action: FantasyAction;
       readonly status: 'rejected';
-      readonly decision: FantasyDecision;
-      readonly approvedActions: readonly FantasyAction[];
       readonly issues: readonly PolicyIssue[];
     };
+
+export interface PolicyEvaluation {
+  readonly decision: FantasyDecision;
+  readonly results: readonly ActionPolicyEvaluation[];
+}
 
 export interface PolicyRule {
   readonly id: string;
   evaluate(
     action: FantasyAction,
     context: PolicyContext,
-  ): PolicyIssue | undefined;
+  ): PolicyIssue | readonly PolicyIssue[] | undefined;
 }
 
 export interface PolicyEngine {
@@ -47,27 +50,39 @@ export interface PolicyEngine {
   ): Promise<PolicyEvaluation>;
 }
 
-/** Creates a deterministic, fail-closed policy boundary from independent rules. */
+/** Creates a deterministic policy boundary with complete, per-action results. */
 export function createPolicyEngine(rules: readonly PolicyRule[]): PolicyEngine {
   return {
     evaluate(decision, context) {
-      const issues = decision.proposedActions.flatMap((action) => {
-        const issue = rules
-          .map((rule) => rule.evaluate(action, context))
-          .find(Boolean);
-        return issue === undefined ? [] : [issue];
-      });
-      const rejectedIds = new Set(issues.map((issue) => issue.actionId));
-      const approvedActions = decision.proposedActions.filter(
-        (action) => !rejectedIds.has(action.id),
+      const results = decision.proposedActions.map(
+        (action): ActionPolicyEvaluation => {
+          const issues = rules.reduce<PolicyIssue[]>((allIssues, rule) => {
+            const result = rule.evaluate(action, context);
+            if (result === undefined) return allIssues;
+            if (isPolicyIssueArray(result)) allIssues.push(...result);
+            else allIssues.push(result);
+            return allIssues;
+          }, []);
+          return issues.length === 0
+            ? { action, status: 'approved', issues: [] }
+            : { action, status: 'rejected', issues };
+        },
       );
-
-      const evaluation: PolicyEvaluation =
-        issues.length === 0
-          ? { status: 'approved', decision, approvedActions, issues: [] }
-          : { status: 'rejected', decision, approvedActions, issues };
-
-      return Promise.resolve(evaluation);
+      return Promise.resolve({ decision, results });
     },
   };
+}
+
+function isPolicyIssueArray(
+  value: PolicyIssue | readonly PolicyIssue[],
+): value is readonly PolicyIssue[] {
+  return Array.isArray(value);
+}
+
+export function getApprovedActions(
+  evaluation: PolicyEvaluation,
+): readonly FantasyAction[] {
+  return evaluation.results.flatMap((result) =>
+    result.status === 'approved' ? [result.action] : [],
+  );
 }

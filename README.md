@@ -15,6 +15,6 @@ pnpm check
 pnpm cli
 ```
 
-Use `pnpm cli yahoo help` to list the opt-in Yahoo OAuth and read-only commands. The CLI does not persist credentials or expose any write operation.
+Use `pnpm cli yahoo help` to list the opt-in Yahoo OAuth and read-only commands. The CLI stores Yahoo tokens in a gitignored, owner-readable file by default and never exposes a write operation.
 
 See [the architecture](docs/ARCHITECTURE.md), [domain vocabulary](docs/DOMAIN.md), and [roadmap](docs/ROADMAP.md).

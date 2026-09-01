@@ -124,33 +124,49 @@ export class YahooFantasyReader implements FantasyPlatformReader {
   ): Promise<readonly Player[]> {
     const key = yahooLeagueKey(id);
     const limit = normalizeLimit(query.limit);
-    const players: Player[] = [];
+    const positions: readonly (Position | undefined)[] =
+      query.positions === undefined || query.positions.length === 0
+        ? [undefined]
+        : [...new Set(query.positions)];
+    const results = await Promise.all(
+      positions.map((position) =>
+        this.#getAvailablePlayersForPosition(key, query, limit, position),
+      ),
+    );
+    const uniquePlayers = new Map<string, Player>();
+    for (const player of results.flat()) uniquePlayers.set(player.id, player);
+    return [...uniquePlayers.values()].slice(0, limit);
+  }
 
+  async #getAvailablePlayersForPosition(
+    leagueKey: string,
+    query: PlayerQuery,
+    limit: number,
+    position: Position | undefined,
+  ): Promise<readonly Player[]> {
+    const players: Player[] = [];
     while (players.length < limit) {
       const count = Math.min(PAGE_SIZE, limit - players.length);
       const filters = [
-        'status=FA',
+        `status=${availabilityCode(query.availability)}`,
         `start=${players.length}`,
         `count=${count}`,
         ...(query.text === undefined
           ? []
           : [`search=${encodeMatrixValue(query.text)}`]),
-        ...(query.positions?.[0] === undefined
+        ...(position === undefined
           ? []
-          : [
-              `position=${encodeMatrixValue(toYahooPosition(query.positions[0]))}`,
-            ]),
+          : [`position=${encodeMatrixValue(toYahooPosition(position))}`]),
       ];
       const page = mapPlayers(
         await this.#http.get(
-          `/league/${encodePathKey(key)}/players;${filters.join(';')}`,
+          `/league/${encodePathKey(leagueKey)}/players;${filters.join(';')}`,
         ),
       );
       players.push(...page);
       if (page.length < count) break;
     }
-
-    return players.slice(0, limit);
+    return players;
   }
 
   async getTransactions(
@@ -197,8 +213,15 @@ function encodeMatrixValue(value: string): string {
 }
 
 function toYahooPosition(position: Position): string {
-  if (position === 'DEF') return 'D';
   if (position === 'FLEX') return 'W/R/T';
   if (position === 'SUPER_FLEX') return 'Q/W/R/T';
   return position;
+}
+
+function availabilityCode(
+  availability: PlayerQuery['availability'],
+): 'A' | 'FA' | 'W' {
+  if (availability === 'free-agent') return 'FA';
+  if (availability === 'waivers') return 'W';
+  return 'A';
 }

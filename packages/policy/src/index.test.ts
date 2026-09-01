@@ -11,7 +11,11 @@ import {
   type Roster,
 } from '@eggbot/core';
 
-import { createPolicyEngine, type PolicyRule } from './index.js';
+import {
+  createPolicyEngine,
+  getApprovedActions,
+  type PolicyRule,
+} from './index.js';
 
 describe('createPolicyEngine', () => {
   it('rejects a denied action while preserving approved actions for inspection', async () => {
@@ -45,24 +49,42 @@ describe('createPolicyEngine', () => {
         },
       ],
     };
-    const rule: PolicyRule = {
+    const firstRule: PolicyRule = {
       id: 'deny-one',
       evaluate: (action) =>
         action.id === deniedId
           ? { actionId: action.id, code: 'DENIED', message: 'Denied for test' }
           : undefined,
     };
+    const secondRule: PolicyRule = {
+      id: 'deny-one-again',
+      evaluate: (action) =>
+        action.id === deniedId
+          ? {
+              actionId: action.id,
+              code: 'ALSO_DENIED',
+              message: 'A second violation for test',
+            }
+          : undefined,
+    };
 
-    const result = await createPolicyEngine([rule]).evaluate(decision, {
-      league,
-      roster,
-      evaluatedAt: '2026-09-01T00:00:01.000Z',
+    const result = await createPolicyEngine([firstRule, secondRule]).evaluate(
+      decision,
+      {
+        league,
+        roster,
+        evaluatedAt: '2026-09-01T00:00:01.000Z',
+      },
+    );
+
+    expect(result.results).toHaveLength(2);
+    expect(result.results[0]).toMatchObject({
+      status: 'rejected',
+      issues: [{ code: 'DENIED' }, { code: 'ALSO_DENIED' }],
     });
-
-    expect(result.status).toBe('rejected');
-    expect(result.approvedActions.map((action) => action.id)).toEqual([
+    expect(result.results[1]).toMatchObject({ status: 'approved', issues: [] });
+    expect(getApprovedActions(result).map((action) => action.id)).toEqual([
       'approved',
     ]);
-    expect(result.issues).toHaveLength(1);
   });
 });

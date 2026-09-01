@@ -14,9 +14,12 @@ import type {
   Transaction,
 } from '@eggbot/core';
 
+export type PlayerAvailability = 'available' | 'free-agent' | 'waivers';
+
 export interface PlayerQuery {
   readonly text?: string;
   readonly positions?: readonly Position[];
+  readonly availability?: PlayerAvailability;
   readonly limit?: number;
 }
 

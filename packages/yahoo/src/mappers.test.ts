@@ -75,6 +75,7 @@ describe('Yahoo response mappers', () => {
                 0: { roster_position: [{ position: 'QB' }, { count: '1' }] },
                 1: { roster_position: [{ position: 'W/R/T' }, { count: '2' }] },
                 2: { roster_position: [{ position: 'BN' }, { count: '1' }] },
+                3: { roster_position: [{ position: 'W/T' }, { count: '1' }] },
               },
             },
             {
@@ -99,13 +100,17 @@ describe('Yahoo response mappers', () => {
     const league = mapLeague(content);
     expect(league.id).toBe(`yahoo:league:${leagueKey}`);
     expect(league.settings.teamCount).toBe(10);
-    expect(league.settings.rosterSlots).toHaveLength(4);
+    expect(league.settings.rosterSlots).toHaveLength(5);
     expect(league.settings.rosterSlots[1]).toMatchObject({
       name: 'W/R/T',
       kind: 'active',
-      eligiblePositions: ['RB', 'WR', 'TE', 'FLEX'],
+      eligiblePositions: ['WR', 'RB', 'TE'],
     });
     expect(league.settings.rosterSlots[3]?.kind).toBe('bench');
+    expect(league.settings.rosterSlots[4]?.eligiblePositions).toEqual([
+      'WR',
+      'TE',
+    ]);
     expect(league.settings.scoringRules).toEqual([
       { key: 'yahoo.stat.4', points: 4, description: 'Passing Touchdowns' },
     ]);

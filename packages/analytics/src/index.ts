@@ -1,4 +1,4 @@
-import type { Lineup, PlayerId } from '@eggbot/core';
+import type { LeagueSettings, Lineup, PlayerId } from '@eggbot/core';
 
 export interface PlayerProjection {
   readonly playerId: PlayerId;
@@ -16,18 +16,27 @@ export interface AnalyticsProvider<Input = unknown> {
   analyze(input: Input): Promise<readonly AnalyticsMetric[]>;
 }
 
-/** A small deterministic primitive; richer analytics belong to later phases. */
-export function sumProjectedLineupPoints(
+/** Sums only assignments occupying active league slots. */
+export function sumProjectedStartingLineupPoints(
   lineup: Lineup,
+  leagueSettings: LeagueSettings,
   projections: readonly PlayerProjection[],
 ): number {
   const pointsByPlayer = new Map(
     projections.map(({ playerId, points }) => [playerId, points]),
   );
+  const activeSlotIds = new Set(
+    leagueSettings.rosterSlots
+      .filter((slot) => slot.kind === 'active')
+      .map((slot) => slot.id),
+  );
 
   return lineup.assignments.reduce(
     (total, assignment) =>
-      total + (pointsByPlayer.get(assignment.playerId) ?? 0),
+      total +
+      (activeSlotIds.has(assignment.slotId)
+        ? (pointsByPlayer.get(assignment.playerId) ?? 0)
+        : 0),
     0,
   );
 }

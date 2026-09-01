@@ -12,6 +12,7 @@
     "build": "pnpm --recursive --sort --if-present run build",
     "typecheck": "pnpm --recursive --sort --if-present run typecheck",
     "test": "vitest run",
+    "test:integration": "vitest run packages/yahoo/src/adapter.integration.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

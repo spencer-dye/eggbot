@@ -34,7 +34,7 @@ A transaction is historical state read from a platform. An action is EggBot's pr
 
 ### Proposal versus execution
 
-Actions inside a decision are proposed. Policy evaluation yields approved actions or rejection issues. Only a platform executor can attempt an approved action, producing an `ActionResult`. These stages stay distinct for audit, dry-run, replay, and safety controls.
+Actions inside a decision are proposed. Policy evaluation records an approved or rejected result for every action and retains all rejection issues. Orchestration explicitly derives the approved subset. Only a platform executor can attempt an approved action, producing an `ActionResult`. These stages stay distinct for audit, dry-run, replay, and safety controls.
 
 ### Platform data versus EggBot domain data
 

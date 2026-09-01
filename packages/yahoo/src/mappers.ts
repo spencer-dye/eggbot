@@ -400,10 +400,11 @@ function mapYahooPosition(value: string): readonly Position[] {
   };
   const position = direct[normalized];
   if (position !== undefined) return [position];
-  if (['W/R', 'W/T', 'W/R/T'].includes(normalized))
-    return ['RB', 'WR', 'TE', 'FLEX'];
+  if (normalized === 'W/R') return ['WR', 'RB'];
+  if (normalized === 'W/T') return ['WR', 'TE'];
+  if (normalized === 'W/R/T') return ['WR', 'RB', 'TE'];
   if (['Q/W/R/T', 'Q/R/W/T', 'SUPERFLEX'].includes(normalized)) {
-    return ['QB', 'RB', 'WR', 'TE', 'SUPER_FLEX'];
+    return ['QB', 'WR', 'RB', 'TE'];
   }
   if (['BN', 'IR', 'IR+', 'NA', 'UTIL'].includes(normalized))
     return allFootballPositions;

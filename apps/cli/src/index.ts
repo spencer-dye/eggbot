@@ -1,5 +1,7 @@
-import { sumProjectedLineupPoints } from '@eggbot/analytics';
-import { leagueId, teamId, type Lineup } from '@eggbot/core';
+import { resolve } from 'node:path';
+
+import { sumProjectedStartingLineupPoints } from '@eggbot/analytics';
+import { leagueId, teamId, type Lineup, type Position } from '@eggbot/core';
 import {
   YahooFantasyReader,
   YahooHttpClient,
@@ -9,19 +11,29 @@ import {
   yahooTeamId,
   type YahooOAuthConfig,
   type YahooTokenSet,
-  type YahooTokenStore,
 } from '@eggbot/yahoo';
+
+import { createFileTokenStore, redactTokens } from './token-file-store.js';
 
 const emptyLineup: Lineup = {
   teamId: teamId('phase-zero-team'),
   scoringPeriod: 'demo',
   assignments: [],
 };
+const defaultTokenFile = resolve(
+  import.meta.dirname,
+  '../../..',
+  '.eggbot/yahoo-tokens.json',
+);
 
 async function main(args: readonly string[]): Promise<void> {
   if (args.length === 0 || args[0] === 'smoke') {
     printJson({
-      analyticsResult: sumProjectedLineupPoints(emptyLineup, []),
+      analyticsResult: sumProjectedStartingLineupPoints(
+        emptyLineup,
+        { rosterSlots: [], scoringRules: [] },
+        [],
+      ),
       platformBoundary: yahooAdapterMetadata,
       phase: 1,
       writeOperations: false,
@@ -37,7 +49,16 @@ async function main(args: readonly string[]): Promise<void> {
   const command = args[1];
   const commandArgs = args.slice(2);
   const config = yahooConfigFromEnvironment();
-  const tokenStore = createCliTokenStore(tokensFromEnvironment());
+  const initialTokens = tokensFromEnvironment();
+  const tokenStore = createFileTokenStore({
+    path: process.env.YAHOO_TOKEN_FILE ?? defaultTokenFile,
+    ...(initialTokens === undefined ? {} : { initialTokens }),
+    onSaved: (path, tokens) => {
+      console.error(
+        `Yahoo tokens saved to ${path}: ${JSON.stringify(redactTokens(tokens))}`,
+      );
+    },
+  });
   const oauth = new YahooOAuthClient({ config, tokenStore });
 
   if (command === 'auth-url') {
@@ -51,10 +72,11 @@ async function main(args: readonly string[]): Promise<void> {
     return;
   }
   if (command === 'exchange') {
+    const tokens = await oauth.exchangeAuthorizationCode(
+      requireArgument(commandArgs, 0, 'code'),
+    );
     printJson(
-      await oauth.exchangeAuthorizationCode(
-        requireArgument(commandArgs, 0, 'code'),
-      ),
+      commandArgs.includes('--show-secrets') ? tokens : redactTokens(tokens),
     );
     return;
   }
@@ -117,12 +139,16 @@ async function main(args: readonly string[]): Promise<void> {
     case 'players': {
       const search = readOption(commandArgs, '--search');
       const limit = readNumberOption(commandArgs, '--limit');
+      const availability = readAvailability(commandArgs);
+      const positions = readPositions(commandArgs);
       printJson(
         await reader.getAvailablePlayers(
           asLeagueId(requireArgument(commandArgs, 0, 'league key')),
           {
             ...(search === undefined ? {} : { text: search }),
             ...(limit === undefined ? {} : { limit }),
+            ...(availability === undefined ? {} : { availability }),
+            ...(positions === undefined ? {} : { positions }),
           },
         ),
       );
@@ -162,22 +188,6 @@ function tokensFromEnvironment(): YahooTokenSet | undefined {
     ...(process.env.YAHOO_REFRESH_TOKEN === undefined
       ? {}
       : { refreshToken: process.env.YAHOO_REFRESH_TOKEN }),
-  };
-}
-
-function createCliTokenStore(
-  initialTokens: YahooTokenSet | undefined,
-): YahooTokenStore {
-  let tokens = initialTokens;
-  return {
-    load: () => Promise.resolve(tokens),
-    save: (updated) => {
-      tokens = updated;
-      console.error(
-        `Yahoo tokens updated for caller-managed persistence:\n${JSON.stringify(updated)}`,
-      );
-      return Promise.resolve();
-    },
   };
 }
 
@@ -246,6 +256,47 @@ function readNumberOption(
   return number;
 }
 
+function readAvailability(
+  args: readonly string[],
+): 'available' | 'free-agent' | 'waivers' | undefined {
+  const value = readOption(args, '--availability');
+  if (value === undefined) return undefined;
+  if (value === 'available' || value === 'free-agent' || value === 'waivers')
+    return value;
+  throw new Error('--availability must be available, free-agent, or waivers');
+}
+
+function readPositions(
+  args: readonly string[],
+): readonly Position[] | undefined {
+  const value = readOption(args, '--positions');
+  if (value === undefined) return undefined;
+  const supported: readonly Position[] = [
+    'QB',
+    'RB',
+    'WR',
+    'TE',
+    'K',
+    'DEF',
+    'DL',
+    'LB',
+    'DB',
+    'FLEX',
+    'SUPER_FLEX',
+  ];
+  const positions = value.split(',');
+  if (
+    !positions.every((position): position is Position =>
+      supported.includes(position as Position),
+    )
+  ) {
+    throw new Error(
+      '--positions must be a comma-separated list of EggBot positions',
+    );
+  }
+  return positions;
+}
+
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
@@ -255,7 +306,7 @@ function printHelp(): void {
 
   pnpm cli [smoke]
   pnpm cli yahoo auth-url [state]
-  pnpm cli yahoo exchange <authorization-code>
+  pnpm cli yahoo exchange <authorization-code> [--show-secrets]
   pnpm cli yahoo games
   pnpm cli yahoo leagues [game-key]
   pnpm cli yahoo league <league-key>
@@ -264,16 +315,18 @@ function printHelp(): void {
   pnpm cli yahoo lineup <team-key> <week>
   pnpm cli yahoo standings <league-key>
   pnpm cli yahoo matchups <league-key> <week>
-  pnpm cli yahoo players <league-key> [--search text] [--limit count]
+  pnpm cli yahoo players <league-key> [--availability available|free-agent|waivers]
+      [--positions RB,WR] [--search text] [--limit count]
   pnpm cli yahoo transactions <league-key> [--limit count]
 
 Environment:
   YAHOO_CLIENT_ID              required for Yahoo commands
   YAHOO_CLIENT_SECRET          required for Yahoo commands
   YAHOO_REDIRECT_URI           defaults to oob
-  YAHOO_ACCESS_TOKEN           required for read commands
+  YAHOO_ACCESS_TOKEN           optional if the token file exists
   YAHOO_REFRESH_TOKEN          enables automatic refresh
-  YAHOO_TOKEN_EXPIRES_AT       epoch milliseconds or ISO time`);
+  YAHOO_TOKEN_EXPIRES_AT       epoch milliseconds or ISO time
+  YAHOO_TOKEN_FILE             defaults to ${defaultTokenFile}`);
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {
