@@ -12,14 +12,15 @@ import type {
 import {
   AnalyticsValidationError,
   type AnalyticsWarning,
+  type AvailablePositionScarcity,
+  type BestAvailablePlayerAtPosition,
   type LeagueAnalytics,
   type LineupProjection,
   type MatchupProjection,
   type PlayerProjection,
-  type PlayerValueOverReplacement,
-  type PositionReplacementLevel,
-  type PositionScarcity,
+  type PlayerValueOverBestAvailable,
   type ProjectionCoverage,
+  type ProjectionSet,
   type RosterRiskMetrics,
 } from './types.js';
 
@@ -39,19 +40,20 @@ const positionOrder: readonly Position[] = [
 
 export function analyzeLeagueSnapshot(
   snapshot: LeagueSnapshot,
-  projections: readonly PlayerProjection[],
+  projectionSet: ProjectionSet,
 ): LeagueAnalytics {
-  const projectionByPlayer = validateProjections(projections);
+  validateProjectionSet(snapshot, projectionSet);
+  const projectionByPlayer = validateProjections(projectionSet.players);
   const relevantPositions = positionsFor(snapshot);
   const availablePlayers = uniquePlayers([
     ...snapshot.playerPool.freeAgents.items,
     ...snapshot.playerPool.waivers.items,
   ]);
-  const replacementLevels = relevantPositions.map((position) =>
-    replacementLevel(position, availablePlayers, projectionByPlayer),
+  const bestAvailablePlayers = relevantPositions.map((position) =>
+    bestAvailablePlayer(position, availablePlayers, projectionByPlayer),
   );
-  const replacementByPosition = new Map(
-    replacementLevels.map((level) => [level.position, level]),
+  const bestAvailableByPosition = new Map(
+    bestAvailablePlayers.map((benchmark) => [benchmark.position, benchmark]),
   );
   const lineupProjections = snapshot.teams.map(({ lineup }) =>
     projectLineup(lineup, snapshot.league.settings, projectionByPlayer),
@@ -62,15 +64,15 @@ export function analyzeLeagueSnapshot(
   const matchupProjections = snapshot.matchups.map((matchup) =>
     projectMatchup(matchup, lineupByTeam),
   );
-  const playerValues = snapshot.teams.flatMap((team) =>
-    valuesOverReplacement(
+  const playerValuesOverBestAvailable = snapshot.teams.flatMap((team) =>
+    valuesOverBestAvailable(
       team,
       relevantPositions,
-      replacementByPosition,
+      bestAvailableByPosition,
       projectionByPlayer,
     ),
   );
-  const positionalScarcity = relevantPositions.map((position) =>
+  const availablePositionScarcity = relevantPositions.map((position) =>
     scarcity(position, availablePlayers, projectionByPlayer),
   );
   const rosterRisk = snapshot.teams.map((team) =>
@@ -84,13 +86,21 @@ export function analyzeLeagueSnapshot(
   return {
     sourceSnapshotId: snapshot.id,
     scoringPeriod: snapshot.scoringPeriod,
+    projectionProvenance: {
+      scoringPeriod: projectionSet.scoringPeriod,
+      observedAt: projectionSet.observedAt,
+      source: projectionSet.source,
+      ...(projectionSet.version === undefined
+        ? {}
+        : { version: projectionSet.version }),
+    },
     lineupProjections,
     matchupProjections,
-    replacementLevels,
-    playerValues,
-    positionalScarcity,
+    bestAvailablePlayers,
+    playerValuesOverBestAvailable,
+    availablePositionScarcity,
     rosterRisk,
-    warnings: analyticsWarnings(snapshot, replacementLevels),
+    warnings: analyticsWarnings(snapshot, bestAvailablePlayers),
   };
 }
 
@@ -180,6 +190,12 @@ function projectMatchup(
       const opponents = participantLineups.filter(
         (_opponent, opponentIndex) => opponentIndex !== index,
       );
+      const marginCoverage = [lineup, ...opponents].every(
+        ({ projectionCoverage, unfilledActiveSlotIds }) =>
+          projectionCoverage.ratio === 1 && unfilledActiveSlotIds.length === 0,
+      )
+        ? 'complete'
+        : 'partial';
       const bestOpponent = opponents.reduce<number | undefined>(
         (best, opponent) =>
           best === undefined || opponent.projectedPoints > best
@@ -191,7 +207,8 @@ function projectMatchup(
         teamId: lineup.teamId,
         projectedPoints: lineup.projectedPoints,
         projectionCoverage: lineup.projectionCoverage,
-        ...(bestOpponent === undefined
+        ...(bestOpponent === undefined ? {} : { marginCoverage }),
+        ...(bestOpponent === undefined || marginCoverage === 'partial'
           ? {}
           : { marginToBestOpponent: lineup.projectedPoints - bestOpponent }),
       };
@@ -199,50 +216,51 @@ function projectMatchup(
   };
 }
 
-function replacementLevel(
+function bestAvailablePlayer(
   position: Position,
   players: readonly Player[],
   projections: ReadonlyMap<PlayerId, PlayerProjection>,
-): PositionReplacementLevel {
+): BestAvailablePlayerAtPosition {
   const eligible = players.filter(({ eligiblePositions }) =>
     eligiblePositions.includes(position),
   );
   const projected = projectedPlayers(eligible, projections);
-  const replacement = projected[0];
+  const bestAvailable = projected[0];
   return {
     position,
-    availablePlayerCount: eligible.length,
-    projectedPlayerCount: projected.length,
-    ...(replacement === undefined
+    capturedAvailablePlayerCount: eligible.length,
+    projectedAvailablePlayerCount: projected.length,
+    ...(bestAvailable === undefined
       ? {}
       : {
-          replacementPlayerId: replacement.player.id,
-          replacementPoints: replacement.projection.points,
+          playerId: bestAvailable.player.id,
+          projectedPoints: bestAvailable.projection.points,
         }),
   };
 }
 
-function valuesOverReplacement(
+function valuesOverBestAvailable(
   team: TeamSnapshot,
   positions: readonly Position[],
-  replacements: ReadonlyMap<Position, PositionReplacementLevel>,
+  bestAvailableByPosition: ReadonlyMap<Position, BestAvailablePlayerAtPosition>,
   projections: ReadonlyMap<PlayerId, PlayerProjection>,
-): readonly PlayerValueOverReplacement[] {
+): readonly PlayerValueOverBestAvailable[] {
   return team.roster.entries.flatMap(({ player }) => {
     const projection = projections.get(player.id);
     if (projection === undefined) return [];
     return positions.flatMap((position) => {
       if (!player.eligiblePositions.includes(position)) return [];
-      const replacement = replacements.get(position)?.replacementPoints;
-      if (replacement === undefined) return [];
+      const bestAvailable =
+        bestAvailableByPosition.get(position)?.projectedPoints;
+      if (bestAvailable === undefined) return [];
       return [
         {
           playerId: player.id,
           teamId: team.team.id,
           position,
           projectedPoints: projection.points,
-          replacementPoints: replacement,
-          valueOverReplacement: projection.points - replacement,
+          bestAvailableProjectedPoints: bestAvailable,
+          valueOverBestAvailable: projection.points - bestAvailable,
         },
       ];
     });
@@ -253,7 +271,7 @@ function scarcity(
   position: Position,
   players: readonly Player[],
   projections: ReadonlyMap<PlayerId, PlayerProjection>,
-): PositionScarcity {
+): AvailablePositionScarcity {
   const eligible = players.filter(({ eligiblePositions }) =>
     eligiblePositions.includes(position),
   );
@@ -263,16 +281,16 @@ function scarcity(
   if (points.length === 0) {
     return {
       position,
-      availablePlayerCount: eligible.length,
-      projectedPlayerCount: 0,
+      capturedAvailablePlayerCount: eligible.length,
+      projectedAvailablePlayerCount: 0,
     };
   }
   const top = points[0] as number;
   const median = medianOfDescending(points);
   return {
     position,
-    availablePlayerCount: eligible.length,
-    projectedPlayerCount: points.length,
+    capturedAvailablePlayerCount: eligible.length,
+    projectedAvailablePlayerCount: points.length,
     topAvailablePoints: top,
     medianAvailablePoints: median,
     topToMedianDrop: top - median,
@@ -397,9 +415,33 @@ function validateProjections(
   return result;
 }
 
+function validateProjectionSet(
+  snapshot: LeagueSnapshot,
+  projectionSet: ProjectionSet,
+): void {
+  if (projectionSet.scoringPeriod !== snapshot.scoringPeriod) {
+    invalid(
+      'PROJECTION_PERIOD_MISMATCH',
+      `${projectionSet.scoringPeriod}:${snapshot.scoringPeriod}`,
+    );
+  }
+  if (projectionSet.source.trim().length === 0) {
+    invalid('INVALID_PROJECTION_SOURCE', projectionSet.source);
+  }
+  if (Number.isNaN(Date.parse(projectionSet.observedAt))) {
+    invalid('INVALID_PROJECTION_TIMESTAMP', projectionSet.observedAt);
+  }
+  if (
+    projectionSet.version !== undefined &&
+    projectionSet.version.trim().length === 0
+  ) {
+    invalid('INVALID_PROJECTION_VERSION', projectionSet.version);
+  }
+}
+
 function analyticsWarnings(
   snapshot: LeagueSnapshot,
-  replacements: readonly PositionReplacementLevel[],
+  bestAvailablePlayers: readonly BestAvailablePlayerAtPosition[],
 ): readonly AnalyticsWarning[] {
   return [
     {
@@ -414,10 +456,16 @@ function analyticsWarnings(
       requestedLimit: snapshot.playerPool.waivers.coverage.requestedLimit,
       returnedCount: snapshot.playerPool.waivers.coverage.returnedCount,
     },
-    ...replacements.flatMap((replacement): readonly AnalyticsWarning[] =>
-      replacement.replacementPoints === undefined
-        ? [{ code: 'NO_PROJECTED_REPLACEMENT', position: replacement.position }]
-        : [],
+    ...bestAvailablePlayers.flatMap(
+      (bestAvailable): readonly AnalyticsWarning[] =>
+        bestAvailable.projectedPoints === undefined
+          ? [
+              {
+                code: 'NO_PROJECTED_AVAILABLE_PLAYER',
+                position: bestAvailable.position,
+              },
+            ]
+          : [],
     ),
     ...snapshot.integrityWarnings.map((warning): AnalyticsWarning => ({
       code: 'SOURCE_SNAPSHOT_INTEGRITY_WARNING',

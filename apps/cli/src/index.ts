@@ -50,8 +50,8 @@ async function main(args: readonly string[]): Promise<void> {
       analyticsCapabilities: [
         'lineup-projections',
         'matchup-margins',
-        'replacement-value',
-        'positional-scarcity',
+        'best-available-value',
+        'available-pool-scarcity',
         'roster-risk',
       ],
       platformBoundary: yahooAdapterMetadata,

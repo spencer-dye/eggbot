@@ -59,6 +59,11 @@ const snapshot: LeagueSnapshot = {
 const analytics: LeagueAnalytics = {
   sourceSnapshotId: snapshot.id,
   scoringPeriod: snapshot.scoringPeriod,
+  projectionProvenance: {
+    scoringPeriod: snapshot.scoringPeriod,
+    observedAt: '2026-09-01T11:45:00.000Z',
+    source: 'test-projections',
+  },
   lineupProjections: [
     {
       teamId: managedTeamId,
@@ -72,9 +77,9 @@ const analytics: LeagueAnalytics = {
     },
   ],
   matchupProjections: [],
-  replacementLevels: [],
-  playerValues: [],
-  positionalScarcity: [],
+  bestAvailablePlayers: [],
+  playerValuesOverBestAvailable: [],
+  availablePositionScarcity: [],
   rosterRisk: [
     {
       teamId: managedTeamId,
@@ -131,5 +136,23 @@ describe('createDecisionContext', () => {
         analytics: { ...analytics, rosterRisk: [] },
       }),
     ).toThrowError('Analytics do not cover the managed team');
+  });
+
+  it('rejects analytics with mismatched projection provenance', () => {
+    expect(() =>
+      createDecisionContext({
+        snapshot,
+        managedTeamId,
+        analytics: {
+          ...analytics,
+          projectionProvenance: {
+            ...analytics.projectionProvenance,
+            scoringPeriod: '4',
+          },
+        },
+      }),
+    ).toThrowError(
+      'Projection scoring period does not match the analytics result',
+    );
   });
 });

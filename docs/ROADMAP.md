@@ -20,7 +20,7 @@ Implemented normalized, timestamped, integrity-checked league state with explici
 
 ## Phase 4 — Analytics
 
-Implemented typed, deterministic lineup projections, replacement value, positional scarcity, matchup margins, and factual roster-risk metrics with explicit projection and bounded-player-pool coverage.
+Implemented provenance-bound, deterministic lineup projections, coverage-qualified matchup margins, best-available player comparisons, available-pool scarcity, and factual roster-risk metrics with explicit projection and bounded-player-pool coverage.
 
 ## Phase 5 — Decision engines
 

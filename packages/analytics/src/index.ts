@@ -4,17 +4,17 @@ export {
 } from './league-analytics.js';
 export {
   AnalyticsValidationError,
-  type AnalyticsMetric,
-  type AnalyticsProvider,
   type AnalyticsWarning,
+  type AvailablePositionScarcity,
+  type BestAvailablePlayerAtPosition,
   type LeagueAnalytics,
   type LineupProjection,
   type MatchupParticipantProjection,
   type MatchupProjection,
   type PlayerProjection,
-  type PlayerValueOverReplacement,
-  type PositionReplacementLevel,
-  type PositionScarcity,
+  type PlayerValueOverBestAvailable,
+  type ProjectionProvenance,
   type ProjectionCoverage,
+  type ProjectionSet,
   type RosterRiskMetrics,
 } from './types.js';

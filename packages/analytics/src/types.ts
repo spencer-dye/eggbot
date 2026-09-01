@@ -13,15 +13,19 @@ export interface PlayerProjection {
   readonly ceiling?: number;
 }
 
-export interface AnalyticsMetric {
-  readonly key: string;
-  readonly value: number;
-  readonly unit?: string;
+export interface ProjectionSet {
+  readonly scoringPeriod: string;
+  readonly observedAt: string;
+  readonly source: string;
+  readonly version?: string;
+  readonly players: readonly PlayerProjection[];
 }
 
-export interface AnalyticsProvider<Input = unknown> {
-  readonly id: string;
-  analyze(input: Input): Promise<readonly AnalyticsMetric[]>;
+export interface ProjectionProvenance {
+  readonly scoringPeriod: string;
+  readonly observedAt: string;
+  readonly source: string;
+  readonly version?: string;
 }
 
 export interface ProjectionCoverage {
@@ -48,7 +52,9 @@ export interface MatchupParticipantProjection {
   readonly teamId: TeamId;
   readonly projectedPoints: number;
   readonly projectionCoverage: ProjectionCoverage;
-  /** Difference from the strongest other participant. */
+  /** Complete only when this participant and every opponent are complete. */
+  readonly marginCoverage?: 'complete' | 'partial';
+  /** Difference from the strongest opponent; omitted for partial coverage. */
   readonly marginToBestOpponent?: number;
 }
 
@@ -57,27 +63,29 @@ export interface MatchupProjection {
   readonly participants: readonly MatchupParticipantProjection[];
 }
 
-export interface PositionReplacementLevel {
+/** Best projected player in the captured free-agent and waiver pools. */
+export interface BestAvailablePlayerAtPosition {
   readonly position: Position;
-  readonly availablePlayerCount: number;
-  readonly projectedPlayerCount: number;
-  readonly replacementPlayerId?: PlayerId;
-  readonly replacementPoints?: number;
+  readonly capturedAvailablePlayerCount: number;
+  readonly projectedAvailablePlayerCount: number;
+  readonly playerId?: PlayerId;
+  readonly projectedPoints?: number;
 }
 
-export interface PlayerValueOverReplacement {
+export interface PlayerValueOverBestAvailable {
   readonly playerId: PlayerId;
   readonly teamId: TeamId;
   readonly position: Position;
   readonly projectedPoints: number;
-  readonly replacementPoints: number;
-  readonly valueOverReplacement: number;
+  readonly bestAvailableProjectedPoints: number;
+  readonly valueOverBestAvailable: number;
 }
 
-export interface PositionScarcity {
+/** Distribution within the captured acquisition pool, not the whole league. */
+export interface AvailablePositionScarcity {
   readonly position: Position;
-  readonly availablePlayerCount: number;
-  readonly projectedPlayerCount: number;
+  readonly capturedAvailablePlayerCount: number;
+  readonly projectedAvailablePlayerCount: number;
   readonly topAvailablePoints?: number;
   readonly medianAvailablePoints?: number;
   readonly topToMedianDrop?: number;
@@ -102,7 +110,7 @@ export type AnalyticsWarning =
       readonly returnedCount: number;
     }
   | {
-      readonly code: 'NO_PROJECTED_REPLACEMENT';
+      readonly code: 'NO_PROJECTED_AVAILABLE_PLAYER';
       readonly position: Position;
     }
   | {
@@ -114,11 +122,12 @@ export type AnalyticsWarning =
 export interface LeagueAnalytics {
   readonly sourceSnapshotId: SnapshotId;
   readonly scoringPeriod: string;
+  readonly projectionProvenance: ProjectionProvenance;
   readonly lineupProjections: readonly LineupProjection[];
   readonly matchupProjections: readonly MatchupProjection[];
-  readonly replacementLevels: readonly PositionReplacementLevel[];
-  readonly playerValues: readonly PlayerValueOverReplacement[];
-  readonly positionalScarcity: readonly PositionScarcity[];
+  readonly bestAvailablePlayers: readonly BestAvailablePlayerAtPosition[];
+  readonly playerValuesOverBestAvailable: readonly PlayerValueOverBestAvailable[];
+  readonly availablePositionScarcity: readonly AvailablePositionScarcity[];
   readonly rosterRisk: readonly RosterRiskMetrics[];
   readonly warnings: readonly AnalyticsWarning[];
 }

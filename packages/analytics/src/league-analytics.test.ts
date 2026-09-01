@@ -11,7 +11,11 @@ import {
 } from '@eggbot/core';
 
 import { analyzeLeagueSnapshot } from './league-analytics.js';
-import { AnalyticsValidationError } from './types.js';
+import {
+  AnalyticsValidationError,
+  type PlayerProjection,
+  type ProjectionSet,
+} from './types.js';
 
 const firstTeamId = teamId('team-1');
 const secondTeamId = teamId('team-2');
@@ -28,18 +32,27 @@ const freeRb = player('free-rb', ['RB']);
 const waiverRb = player('waiver-rb', ['RB']);
 
 describe('analyzeLeagueSnapshot', () => {
-  it('derives lineup, matchup, replacement, scarcity, value, and risk facts', () => {
-    const result = analyzeLeagueSnapshot(snapshotFixture(), [
-      { playerId: firstQb.id, points: 20, floor: 15, ceiling: 25 },
-      { playerId: secondQb.id, points: 17, floor: 14, ceiling: 22 },
-      { playerId: secondRb.id, points: 10, floor: 6, ceiling: 15 },
-      { playerId: freeQbOne.id, points: 12 },
-      { playerId: freeQbTwo.id, points: 8 },
-      { playerId: freeRb.id, points: 7 },
-      { playerId: waiverRb.id, points: 9 },
-    ]);
+  it('derives lineup, matchup, available-pool, value, and risk facts', () => {
+    const result = analyzeLeagueSnapshot(
+      snapshotFixture(),
+      projectionSet([
+        { playerId: firstQb.id, points: 20, floor: 15, ceiling: 25 },
+        { playerId: secondQb.id, points: 17, floor: 14, ceiling: 22 },
+        { playerId: secondRb.id, points: 10, floor: 6, ceiling: 15 },
+        { playerId: freeQbOne.id, points: 12 },
+        { playerId: freeQbTwo.id, points: 8 },
+        { playerId: freeRb.id, points: 7 },
+        { playerId: waiverRb.id, points: 9 },
+      ]),
+    );
 
     expect(result.sourceSnapshotId).toBe('snapshot-1');
+    expect(result.projectionProvenance).toEqual({
+      scoringPeriod: '3',
+      observedAt: '2026-09-01T11:45:00.000Z',
+      source: 'test-projections',
+      version: 'fixture-1',
+    });
     expect(result.lineupProjections[0]).toEqual({
       teamId: firstTeamId,
       scoringPeriod: '3',
@@ -52,47 +65,60 @@ describe('analyzeLeagueSnapshot', () => {
       projectedCeilingPoints: 25,
       ceilingCoverage: { projectedCount: 1, totalCount: 2, ratio: 0.5 },
     });
-    expect(result.matchupProjections[0]?.participants).toMatchObject([
-      { teamId: firstTeamId, projectedPoints: 20, marginToBestOpponent: -7 },
-      { teamId: secondTeamId, projectedPoints: 27, marginToBestOpponent: 7 },
+    expect(result.matchupProjections[0]?.participants).toEqual([
+      expect.objectContaining({
+        teamId: firstTeamId,
+        projectedPoints: 20,
+        marginCoverage: 'partial',
+      }),
+      expect.objectContaining({
+        teamId: secondTeamId,
+        projectedPoints: 27,
+        marginCoverage: 'partial',
+      }),
     ]);
-    expect(result.replacementLevels).toEqual([
+    expect(
+      result.matchupProjections[0]?.participants.every(
+        (participant) => participant.marginToBestOpponent === undefined,
+      ),
+    ).toBe(true);
+    expect(result.bestAvailablePlayers).toEqual([
       {
         position: 'QB',
-        availablePlayerCount: 2,
-        projectedPlayerCount: 2,
-        replacementPlayerId: freeQbOne.id,
-        replacementPoints: 12,
+        capturedAvailablePlayerCount: 2,
+        projectedAvailablePlayerCount: 2,
+        playerId: freeQbOne.id,
+        projectedPoints: 12,
       },
       {
         position: 'RB',
-        availablePlayerCount: 3,
-        projectedPlayerCount: 2,
-        replacementPlayerId: waiverRb.id,
-        replacementPoints: 9,
+        capturedAvailablePlayerCount: 3,
+        projectedAvailablePlayerCount: 2,
+        playerId: waiverRb.id,
+        projectedPoints: 9,
       },
     ]);
-    expect(result.playerValues).toContainEqual({
+    expect(result.playerValuesOverBestAvailable).toContainEqual({
       playerId: firstQb.id,
       teamId: firstTeamId,
       position: 'QB',
       projectedPoints: 20,
-      replacementPoints: 12,
-      valueOverReplacement: 8,
+      bestAvailableProjectedPoints: 12,
+      valueOverBestAvailable: 8,
     });
-    expect(result.positionalScarcity).toEqual([
+    expect(result.availablePositionScarcity).toEqual([
       {
         position: 'QB',
-        availablePlayerCount: 2,
-        projectedPlayerCount: 2,
+        capturedAvailablePlayerCount: 2,
+        projectedAvailablePlayerCount: 2,
         topAvailablePoints: 12,
         medianAvailablePoints: 10,
         topToMedianDrop: 2,
       },
       {
         position: 'RB',
-        availablePlayerCount: 3,
-        projectedPlayerCount: 2,
+        capturedAvailablePlayerCount: 3,
+        projectedAvailablePlayerCount: 2,
         topAvailablePoints: 9,
         medianAvailablePoints: 8,
         topToMedianDrop: 1,
@@ -144,14 +170,77 @@ describe('analyzeLeagueSnapshot', () => {
           ...snapshot.teams.slice(1),
         ],
       },
-      [{ playerId: firstQb.id, points: 20 }],
+      projectionSet([{ playerId: firstQb.id, points: 20 }]),
     );
 
     expect(result.lineupProjections[0]).toMatchObject({
       unfilledActiveSlotIds: [rbSlot],
       missingProjectionPlayerIds: [],
     });
+    expect(result.matchupProjections[0]?.participants).toMatchObject([
+      { teamId: firstTeamId, marginCoverage: 'partial' },
+      { teamId: secondTeamId, marginCoverage: 'partial' },
+    ]);
   });
+
+  it('reports matchup margins only when every participant is complete', () => {
+    const result = analyzeLeagueSnapshot(
+      snapshotFixture(),
+      projectionSet([
+        { playerId: firstQb.id, points: 20 },
+        { playerId: firstRb.id, points: 11 },
+        { playerId: secondQb.id, points: 17 },
+        { playerId: secondRb.id, points: 10 },
+      ]),
+    );
+
+    expect(result.matchupProjections[0]?.participants).toMatchObject([
+      {
+        teamId: firstTeamId,
+        marginCoverage: 'complete',
+        marginToBestOpponent: 4,
+      },
+      {
+        teamId: secondTeamId,
+        marginCoverage: 'complete',
+        marginToBestOpponent: -4,
+      },
+    ]);
+  });
+
+  it('rejects a projection set for another scoring period', () => {
+    expectAnalyticsError(
+      () =>
+        analyzeLeagueSnapshot(snapshotFixture(), {
+          ...projectionSet([]),
+          scoringPeriod: '4',
+        }),
+      'PROJECTION_PERIOD_MISMATCH',
+    );
+  });
+
+  it.each([
+    {
+      projectionSet: { ...projectionSet([]), source: ' ' },
+      code: 'INVALID_PROJECTION_SOURCE',
+    },
+    {
+      projectionSet: { ...projectionSet([]), observedAt: 'not-a-timestamp' },
+      code: 'INVALID_PROJECTION_TIMESTAMP',
+    },
+    {
+      projectionSet: { ...projectionSet([]), version: '' },
+      code: 'INVALID_PROJECTION_VERSION',
+    },
+  ])(
+    'rejects invalid projection provenance with $code',
+    ({ projectionSet: invalidSet, code }) => {
+      expectAnalyticsError(
+        () => analyzeLeagueSnapshot(snapshotFixture(), invalidSet),
+        code,
+      );
+    },
+  );
 
   it.each([
     {
@@ -170,16 +259,34 @@ describe('analyzeLeagueSnapshot', () => {
       code: 'INVALID_PROJECTION_RANGE',
     },
   ])('rejects invalid projection input with $code', ({ projections, code }) => {
-    try {
-      analyzeLeagueSnapshot(snapshotFixture(), projections);
-      throw new Error('Expected analytics validation to fail');
-    } catch (error) {
-      expect(error).toBeInstanceOf(AnalyticsValidationError);
-      if (!(error instanceof AnalyticsValidationError)) return;
-      expect(error.code).toBe(code);
-    }
+    expectAnalyticsError(
+      () =>
+        analyzeLeagueSnapshot(snapshotFixture(), projectionSet(projections)),
+      code,
+    );
   });
 });
+
+function projectionSet(players: readonly PlayerProjection[]): ProjectionSet {
+  return {
+    scoringPeriod: '3',
+    observedAt: '2026-09-01T11:45:00.000Z',
+    source: 'test-projections',
+    version: 'fixture-1',
+    players,
+  };
+}
+
+function expectAnalyticsError(operation: () => unknown, code: string): void {
+  try {
+    operation();
+    throw new Error('Expected analytics validation to fail');
+  } catch (error) {
+    expect(error).toBeInstanceOf(AnalyticsValidationError);
+    if (!(error instanceof AnalyticsValidationError)) return;
+    expect(error.code).toBe(code);
+  }
+}
 
 function snapshotFixture(): LeagueSnapshot {
   return {

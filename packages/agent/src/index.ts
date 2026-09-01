@@ -29,6 +29,14 @@ export function createDecisionContext(
     );
   }
   if (
+    context.analytics.projectionProvenance.scoringPeriod !==
+    context.analytics.scoringPeriod
+  ) {
+    throw new RangeError(
+      'Projection scoring period does not match the analytics result',
+    );
+  }
+  if (
     !context.analytics.lineupProjections.some(
       ({ teamId }) => teamId === context.managedTeamId,
     ) ||
