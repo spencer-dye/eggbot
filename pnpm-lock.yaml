@@ -65,6 +65,9 @@ importers:
 
   packages/agent:
     dependencies:
+      '@eggbot/analytics':
+        specifier: workspace:*
+        version: link:../analytics
       '@eggbot/core':
         specifier: workspace:*
         version: link:../core

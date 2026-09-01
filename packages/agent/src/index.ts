@@ -1,6 +1,7 @@
 import type { FantasyDecision, LeagueSnapshot, TeamId } from '@eggbot/core';
+import type { LeagueAnalytics } from '@eggbot/analytics';
 
-export type AnalyticsSnapshot = Readonly<Record<string, unknown>>;
+export type AnalyticsSnapshot = LeagueAnalytics;
 
 export interface DecisionContext {
   readonly snapshot: LeagueSnapshot;
@@ -18,6 +19,24 @@ export function createDecisionContext(
     )
   ) {
     throw new RangeError('Managed team is not present in the league snapshot');
+  }
+  if (context.analytics.sourceSnapshotId !== context.snapshot.id) {
+    throw new RangeError('Analytics were not derived from the league snapshot');
+  }
+  if (context.analytics.scoringPeriod !== context.snapshot.scoringPeriod) {
+    throw new RangeError(
+      'Analytics scoring period does not match the league snapshot',
+    );
+  }
+  if (
+    !context.analytics.lineupProjections.some(
+      ({ teamId }) => teamId === context.managedTeamId,
+    ) ||
+    !context.analytics.rosterRisk.some(
+      ({ teamId }) => teamId === context.managedTeamId,
+    )
+  ) {
+    throw new RangeError('Analytics do not cover the managed team');
   }
   return context;
 }

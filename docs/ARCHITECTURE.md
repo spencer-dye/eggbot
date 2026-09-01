@@ -2,7 +2,7 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 3 establish the shared boundaries, Yahoo adapter, guarded execution, and normalized snapshots without choosing a league format, model provider, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 4 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, and deterministic analytics without choosing a league format, model provider, database, scheduler, or deployment environment.
 
 ## Workspace layout
 
@@ -12,7 +12,7 @@ EggBot is a reusable, provider-independent framework for safe fantasy-football a
 | `@eggbot/platform`  | Provider-neutral read and execution ports                  | `core`                        |
 | `@eggbot/yahoo`     | Yahoo OAuth, read transport, validation, and mapping       | `core`, `platform`            |
 | `@eggbot/snapshot`  | Normalized multi-read league snapshot capture              | `core`, `platform`            |
-| `@eggbot/agent`     | Provider-neutral decision-engine port                      | `core`                        |
+| `@eggbot/agent`     | Provider-neutral decision-engine port                      | `core`, `analytics`           |
 | `@eggbot/policy`    | Deterministic approval/rejection boundary                  | `core`                        |
 | `@eggbot/analytics` | Deterministic calculations and analytics port              | `core`                        |
 | `@eggbot/storage`   | Persistence port, with no implementation                   | None                          |
@@ -32,6 +32,7 @@ flowchart TD
   Y[Yahoo adapter] --> FP
   LS[snapshot capture] --> FP
   LS --> C
+  A --> N
   A --> C[core]
   P --> C
   N --> C
@@ -55,6 +56,14 @@ The original `DecisionContext` independently selected league, roster, lineup, ma
 `@eggbot/snapshot` orchestrates a `FantasyPlatformReader` to capture this state and validates cross-resource identity invariants before returning it. Capture is fail-closed for configured team count, complete standings coverage, global roster ownership, and required read failures. Provider APIs do not offer an atomic read across all resources, so pool/roster overlap is retained as an `observation-race` integrity warning rather than rejecting an otherwise useful snapshot. Snapshots record both `captureStartedAt` and `capturedAt` and explicitly declare `consistency: 'best-effort'`. The service starts roster and lineup reads as soon as team discovery completes, bounds their concurrency, and accepts injected clocks and ID factories for deterministic tests.
 
 No snapshot persistence implementation is selected in Phase 3. Applications may pass returned snapshots to analytics and decision engines or persist them through a future database-neutral repository once access patterns are established.
+
+## Phase 4 public API changes
+
+The Phase 3 `DecisionContext.analytics` field was an untyped record, so decision engines could not rely on stable metric names, units, provenance, or coverage. Phase 4 replaces it with the provider-neutral `LeagueAnalytics` result exported by `@eggbot/analytics`; `@eggbot/agent` therefore adds a type-only dependency on that package. Context construction rejects analytics from another snapshot or scoring period, or analytics that omit the managed team.
+
+`analyzeLeagueSnapshot` deterministically combines a normalized `LeagueSnapshot` with caller-supplied `PlayerProjection` values. It produces per-team lineup projections, matchup margins, position replacement levels, rostered-player value over replacement, positional scarcity facts, and factual roster-risk metrics. It validates duplicate/non-finite/internally inconsistent projections before calculation. No projection vendor, network call, model, or mutable global configuration is selected.
+
+Risk output deliberately avoids a subjective composite score. It reports observable missing slots and projections, starter concentration, projected downside where floor estimates exist, and relevant source-snapshot integrity warnings. Replacement level is the highest projected player currently present in the captured free-agent or waiver pools. Because those pools are bounded, analytics retain explicit warnings and do not claim exhaustive league-wide replacement or scarcity estimates.
 
 ## Phase 2 public API changes
 
@@ -110,11 +119,11 @@ decision proposal -> policy evaluation -> approved actions -> platform executor
 
 A `DecisionEngine` receives domain context and analytics, not credentials or an executor. It returns a `FantasyDecision` containing rationale and proposed actions. Creating either object has no side effect. The policy engine evaluates every proposed action and returns an explicit approved or rejected result. Only an application composition root may pass approved actions to an executor.
 
-`ActionResult` records either successful execution metadata or an actionable failure. A later orchestration layer can add lifecycle persistence, retries, reconciliation, and dry runs without collapsing proposal, approval, and execution into one operation.
+`ActionResult` records successful execution metadata, an actionable failure, or an explicitly uncertain outcome without collapsing proposal, approval, and execution into one operation.
 
 ## Analytics philosophy
 
-Deterministic facts belong in code. Decision engines may reason over those facts, but should not be asked to reproduce calculations that can be tested directly. Phase 0 includes only projected-lineup summation as a boundary proof; broader metrics begin in Phase 4.
+Deterministic facts belong in code. Decision engines may reason over those facts, but should not be asked to reproduce calculations that can be tested directly. Phase 4 implements typed, reproducible league analytics from an immutable snapshot and projection set. External projection acquisition remains a separate Phase 9 concern.
 
 ## Configuration and extension points
 

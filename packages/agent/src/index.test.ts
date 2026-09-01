@@ -6,6 +6,7 @@ import {
   teamId,
   type LeagueSnapshot,
 } from '@eggbot/core';
+import type { LeagueAnalytics } from '@eggbot/analytics';
 
 import { createDecisionContext } from './index.js';
 
@@ -55,11 +56,50 @@ const snapshot: LeagueSnapshot = {
   },
   integrityWarnings: [],
 };
+const analytics: LeagueAnalytics = {
+  sourceSnapshotId: snapshot.id,
+  scoringPeriod: snapshot.scoringPeriod,
+  lineupProjections: [
+    {
+      teamId: managedTeamId,
+      scoringPeriod: snapshot.scoringPeriod,
+      projectedPoints: 0,
+      projectionCoverage: { projectedCount: 0, totalCount: 0, ratio: 1 },
+      missingProjectionPlayerIds: [],
+      unfilledActiveSlotIds: [],
+      floorCoverage: { projectedCount: 0, totalCount: 0, ratio: 1 },
+      ceilingCoverage: { projectedCount: 0, totalCount: 0, ratio: 1 },
+    },
+  ],
+  matchupProjections: [],
+  replacementLevels: [],
+  playerValues: [],
+  positionalScarcity: [],
+  rosterRisk: [
+    {
+      teamId: managedTeamId,
+      unfilledActiveSlotCount: 0,
+      missingStarterProjectionCount: 0,
+      starterProjectionCoverage: {
+        projectedCount: 0,
+        totalCount: 0,
+        ratio: 1,
+      },
+      floorProjectionCoverage: {
+        projectedCount: 0,
+        totalCount: 0,
+        ratio: 1,
+      },
+      sourceIntegrityWarningCount: 0,
+    },
+  ],
+  warnings: [],
+};
 
 describe('createDecisionContext', () => {
   it('accepts an explicitly managed team in the snapshot', () => {
     expect(
-      createDecisionContext({ snapshot, managedTeamId, analytics: {} }),
+      createDecisionContext({ snapshot, managedTeamId, analytics }),
     ).toMatchObject({ managedTeamId });
   });
 
@@ -68,8 +108,28 @@ describe('createDecisionContext', () => {
       createDecisionContext({
         snapshot,
         managedTeamId: teamId('unknown-team'),
-        analytics: {},
+        analytics,
       }),
     ).toThrowError('Managed team is not present in the league snapshot');
+  });
+
+  it('rejects analytics derived from another snapshot', () => {
+    expect(() =>
+      createDecisionContext({
+        snapshot,
+        managedTeamId,
+        analytics: { ...analytics, sourceSnapshotId: snapshotId('other') },
+      }),
+    ).toThrowError('Analytics were not derived from the league snapshot');
+  });
+
+  it('rejects analytics that do not cover the managed team', () => {
+    expect(() =>
+      createDecisionContext({
+        snapshot,
+        managedTeamId,
+        analytics: { ...analytics, rosterRisk: [] },
+      }),
+    ).toThrowError('Analytics do not cover the managed team');
   });
 });

@@ -47,8 +47,15 @@ async function main(args: readonly string[]): Promise<void> {
         { rosterSlots: [], scoringRules: [] },
         [],
       ),
+      analyticsCapabilities: [
+        'lineup-projections',
+        'matchup-margins',
+        'replacement-value',
+        'positional-scarcity',
+        'roster-risk',
+      ],
       platformBoundary: yahooAdapterMetadata,
-      phase: 3,
+      phase: 4,
       writeOperations: 'guarded',
     });
     return;

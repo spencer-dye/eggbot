@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 3 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 4 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -20,7 +20,7 @@ Implemented normalized, timestamped, integrity-checked league state with explici
 
 ## Phase 4 — Analytics
 
-Implement deterministic fantasy-football calculations such as lineup projections, replacement value, scarcity, matchup margin, and roster risk.
+Implemented typed, deterministic lineup projections, replacement value, positional scarcity, matchup margins, and factual roster-risk metrics with explicit projection and bounded-player-pool coverage.
 
 ## Phase 5 — Decision engines
 

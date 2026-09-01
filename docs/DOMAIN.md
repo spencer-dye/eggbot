@@ -51,6 +51,8 @@ Platform payloads, enum values, and identifiers are external data. An adapter va
 
 Platform state is observed source data. Analytics are deterministic values derived from that data. Keeping them separate makes snapshots reproducible and calculations independently testable.
 
+`LeagueAnalytics` identifies its source snapshot and scoring period. A player projection is caller-supplied observed input, while lineup totals, matchup margins, replacement values, scarcity summaries, and roster-risk facts are deterministic derivations. Missing projection coverage remains explicit rather than silently becoming a confident zero estimate.
+
 ### Snapshot coverage and consistency
 
 League, team, roster, lineup, standings, and matchup reads are required for a valid snapshot. When league settings provide a team count, snapshot membership must match it; every discovered team must have exactly one standing, and a rostered player can have only one owner. Free-agent, waiver, and recent-transaction collections are explicitly bounded and retain their requested limits and returned counts. A bounded collection is not represented as complete merely because it contains useful data.
