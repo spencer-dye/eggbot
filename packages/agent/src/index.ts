@@ -1,17 +1,23 @@
 import type { LeagueAnalytics } from '@eggbot/analytics';
-import type {
-  ActionId,
-  AddDropAction,
-  AddPlayerAction,
-  DecisionId,
-  DropPlayerAction,
-  FantasyAction,
-  FantasyDecision,
-  LeagueSnapshot,
-  SetLineupAction,
-  SnapshotId,
-  TeamId,
-  WaiverClaimAction,
+import {
+  actionId,
+  decisionId,
+  leagueId,
+  playerId,
+  rosterSlotId,
+  teamId,
+  type ActionId,
+  type AddDropAction,
+  type AddPlayerAction,
+  type DecisionId,
+  type DropPlayerAction,
+  type FantasyAction,
+  type FantasyDecision,
+  type LeagueSnapshot,
+  type SetLineupAction,
+  type SnapshotId,
+  type TeamId,
+  type WaiverClaimAction,
 } from '@eggbot/core';
 
 export type AnalyticsSnapshot = LeagueAnalytics;
@@ -154,10 +160,12 @@ export async function runDecisionEngine(
   if (completed.getTime() < started.getTime()) {
     invalid('CLOCK_MOVED_BACKWARD', 'completedAt');
   }
-  const id = options.decisionIdFactory();
-  if (typeof id !== 'string' || id.trim().length === 0) {
-    invalid('INVALID_DECISION_ID', String(id));
-  }
+  const id = parseIdentifier(
+    decisionId,
+    options.decisionIdFactory(),
+    'INVALID_DECISION_ID',
+    'decision',
+  );
   const proposedActions = assignActionIds(proposal, options.actionIdFactory);
   const completedAt = completed.toISOString();
   return {
@@ -208,7 +216,7 @@ export function validateDecisionProposal(
       invalid('ACTION_PERIOD_MISMATCH', resource);
     }
   }
-  return { rationale: value.rationale, proposedActions: actions };
+  return { rationale: value.rationale.trim(), proposedActions: actions };
 }
 
 function validateEngineDescriptor(engine: DecisionEngineDescriptor): void {
@@ -234,49 +242,111 @@ function validateEngineDescriptor(engine: DecisionEngineDescriptor): void {
 function validateAction(value: unknown, index: number): FantasyActionIntent {
   const resource = `proposedActions[${index}]`;
   if (!isRecord(value)) invalid('MALFORMED_ACTION', resource);
-  for (const field of ['leagueId', 'teamId'] as const) {
-    if (typeof value[field] !== 'string' || value[field].trim().length === 0) {
-      invalid('MALFORMED_ACTION', `${resource}.${field}`);
-    }
-  }
+  const base = {
+    leagueId: parseIdentifier(
+      leagueId,
+      value.leagueId,
+      'MALFORMED_ACTION',
+      `${resource}.leagueId`,
+    ),
+    teamId: parseIdentifier(
+      teamId,
+      value.teamId,
+      'MALFORMED_ACTION',
+      `${resource}.teamId`,
+    ),
+  };
   switch (value.type) {
-    case 'set-lineup':
+    case 'set-lineup': {
       if (
         typeof value.scoringPeriod !== 'string' ||
         value.scoringPeriod.trim().length === 0 ||
-        !Array.isArray(value.assignments) ||
-        !value.assignments.every(isLineupAssignment)
+        !Array.isArray(value.assignments)
       ) {
         invalid('MALFORMED_ACTION', resource);
       }
-      return value as unknown as FantasyActionIntent;
+      return {
+        ...base,
+        type: 'set-lineup',
+        scoringPeriod: value.scoringPeriod.trim(),
+        assignments: value.assignments.map((assignment, assignmentIndex) =>
+          normalizeLineupAssignment(
+            assignment,
+            `${resource}.assignments[${assignmentIndex}]`,
+          ),
+        ),
+      };
+    }
     case 'add-player':
+      return {
+        ...base,
+        type: 'add-player',
+        playerId: parseIdentifier(
+          playerId,
+          value.playerId,
+          'MALFORMED_ACTION',
+          `${resource}.playerId`,
+        ),
+      };
     case 'drop-player':
-      if (!isNonEmptyString(value.playerId)) {
-        invalid('MALFORMED_ACTION', resource);
-      }
-      return value as unknown as FantasyActionIntent;
+      return {
+        ...base,
+        type: 'drop-player',
+        playerId: parseIdentifier(
+          playerId,
+          value.playerId,
+          'MALFORMED_ACTION',
+          `${resource}.playerId`,
+        ),
+      };
     case 'add-drop':
+      return {
+        ...base,
+        type: 'add-drop',
+        addPlayerId: parseIdentifier(
+          playerId,
+          value.addPlayerId,
+          'MALFORMED_ACTION',
+          `${resource}.addPlayerId`,
+        ),
+        dropPlayerId: parseIdentifier(
+          playerId,
+          value.dropPlayerId,
+          'MALFORMED_ACTION',
+          `${resource}.dropPlayerId`,
+        ),
+      };
+    case 'waiver-claim': {
       if (
-        !isNonEmptyString(value.addPlayerId) ||
-        !isNonEmptyString(value.dropPlayerId)
+        value.bid !== undefined &&
+        (typeof value.bid !== 'number' ||
+          !Number.isSafeInteger(value.bid) ||
+          value.bid < 0)
       ) {
         invalid('MALFORMED_ACTION', resource);
       }
-      return value as unknown as FantasyActionIntent;
-    case 'waiver-claim':
-      if (
-        !isNonEmptyString(value.addPlayerId) ||
-        (value.dropPlayerId !== undefined &&
-          !isNonEmptyString(value.dropPlayerId)) ||
-        (value.bid !== undefined &&
-          (typeof value.bid !== 'number' ||
-            !Number.isSafeInteger(value.bid) ||
-            value.bid < 0))
-      ) {
-        invalid('MALFORMED_ACTION', resource);
-      }
-      return value as unknown as FantasyActionIntent;
+      return {
+        ...base,
+        type: 'waiver-claim',
+        addPlayerId: parseIdentifier(
+          playerId,
+          value.addPlayerId,
+          'MALFORMED_ACTION',
+          `${resource}.addPlayerId`,
+        ),
+        ...(value.dropPlayerId === undefined
+          ? {}
+          : {
+              dropPlayerId: parseIdentifier(
+                playerId,
+                value.dropPlayerId,
+                'MALFORMED_ACTION',
+                `${resource}.dropPlayerId`,
+              ),
+            }),
+        ...(value.bid === undefined ? {} : { bid: value.bid }),
+      };
+    }
     default:
       invalid('UNSUPPORTED_ACTION_TYPE', resource);
   }
@@ -288,30 +358,38 @@ function assignActionIds(
 ): readonly FantasyAction[] {
   const ids = new Set<string>();
   return proposal.proposedActions.map((intent, index): FantasyAction => {
-    const id = actionIdFactory(index, intent);
-    if (typeof id !== 'string' || id.trim().length === 0) {
-      invalid('INVALID_ACTION_ID', `proposedActions[${index}]`);
-    }
+    const id = parseIdentifier(
+      actionId,
+      actionIdFactory(index, intent),
+      'INVALID_ACTION_ID',
+      `proposedActions[${index}]`,
+    );
     if (ids.has(id)) invalid('DUPLICATE_ACTION_ID', id);
     ids.add(id);
     return { ...intent, id };
   });
 }
 
-function isLineupAssignment(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isNonEmptyString(value.slotId) &&
-    isNonEmptyString(value.playerId)
-  );
+function normalizeLineupAssignment(value: unknown, resource: string) {
+  if (!isRecord(value)) invalid('MALFORMED_ACTION', resource);
+  return {
+    slotId: parseIdentifier(
+      rosterSlotId,
+      value.slotId,
+      'MALFORMED_ACTION',
+      `${resource}.slotId`,
+    ),
+    playerId: parseIdentifier(
+      playerId,
+      value.playerId,
+      'MALFORMED_ACTION',
+      `${resource}.playerId`,
+    ),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function validClockValue(value: Date, resource: string): Date {
@@ -319,6 +397,22 @@ function validClockValue(value: Date, resource: string): Date {
     invalid('INVALID_CLOCK_VALUE', resource);
   }
   return value;
+}
+
+function parseIdentifier<Identifier>(
+  parser: (value: unknown) => Identifier,
+  value: unknown,
+  code: string,
+  resource: string,
+): Identifier {
+  try {
+    return parser(value);
+  } catch (cause) {
+    throw new DecisionValidationError(
+      `Decision validation failed for ${resource}`,
+      { code, resource, cause },
+    );
+  }
 }
 
 function invalid(code: string, resource: string): never {

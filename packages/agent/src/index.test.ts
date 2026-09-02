@@ -301,10 +301,70 @@ describe('validateDecisionProposal', () => {
     playerId: playerId('player-1'),
   };
 
+  it('rebuilds actions from allowlisted fields and parses branded IDs', () => {
+    const result = validateDecisionProposal(
+      {
+        rationale: '  Normalize model output.  ',
+        arbitraryProposalField: true,
+        proposedActions: [
+          {
+            id: 'model-controlled-id',
+            type: 'add-player',
+            leagueId: ` ${snapshot.league.id} `,
+            teamId: ` ${managedTeamId} `,
+            playerId: ' player-1 ',
+            arbitraryStuff: 'discard me',
+          },
+          {
+            type: 'set-lineup',
+            leagueId: snapshot.league.id,
+            teamId: managedTeamId,
+            scoringPeriod: ' 3 ',
+            assignments: [
+              {
+                slotId: ' slot-qb ',
+                playerId: ' player-2 ',
+                arbitraryAssignmentField: true,
+              },
+            ],
+            arbitraryStuff: 'discard me too',
+          },
+        ],
+      },
+      context,
+    );
+
+    expect(result).toEqual({
+      rationale: 'Normalize model output.',
+      proposedActions: [
+        {
+          type: 'add-player',
+          leagueId: snapshot.league.id,
+          teamId: managedTeamId,
+          playerId: 'player-1',
+        },
+        {
+          type: 'set-lineup',
+          leagueId: snapshot.league.id,
+          teamId: managedTeamId,
+          scoringPeriod: '3',
+          assignments: [{ slotId: 'slot-qb', playerId: 'player-2' }],
+        },
+      ],
+    });
+  });
+
   it.each([
     {
       proposal: { rationale: ' ', proposedActions: [] },
       code: 'INVALID_RATIONALE',
+    },
+    {
+      proposal: {
+        rationale: 'Invalid player ID',
+        proposedActions: [{ ...validAction, playerId: ' ' }],
+      },
+      code: 'MALFORMED_ACTION',
     },
     {
       proposal: {
