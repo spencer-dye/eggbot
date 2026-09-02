@@ -32,7 +32,7 @@ Implemented snapshot-bound validation, mandatory legality rules, approved-batch 
 
 ## Phase 7 — Autonomous lineup management
 
-Implemented deterministic maximum-projection lineup selection with complete-coverage and integrity-warning abstention, reserve preservation, minimum-gain control, exact projection retention, and a provider-neutral one-shot manager. The workflow composes snapshot capture through guarded execution, enforces snapshot/projection freshness and lineup-only scope, validates policy/executor contracts, prevents overlapping local runs, and returns a complete audit record. Production scheduling, persistence, and distributed coordination remain deferred.
+Implemented deterministic maximum-projection lineup selection with complete-coverage and integrity-warning abstention, reserve preservation, minimum-gain control, exact projection retention, and a provider-neutral one-shot manager. The workflow composes snapshot capture through guarded execution, enforces snapshot/projection freshness and lineup-only scope, mandates successful platform dry-run before mutation, rechecks freshness after preflight, validates policy/executor contracts, verifies confirmed execution through a lineup re-read, prevents overlapping local runs, and returns a complete audit record. Production lock-state intelligence, scheduling, persistence, and distributed coordination remain deferred.
 
 ## Phase 8 — Waiver management
 

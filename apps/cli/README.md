@@ -26,7 +26,7 @@ pnpm cli yahoo manage-lineup 449.l.1234 449.l.1234.t.1 3 \
   --projections ./projections-week-3.json --minimum-gain 0.5
 ```
 
-The projection file contains `scoringPeriod`, `observedAt`, `source`, optional `version`, and a `players` array of `{ playerId, points, floor?, ceiling? }`. Snapshot age defaults to five minutes and projection age to thirty minutes; both are configurable with explicit millisecond options. Add `--execute` only after reviewing dry-run output.
+The projection file contains `scoringPeriod`, `observedAt`, `source`, optional `version`, and a `players` array of `{ playerId, points, floor?, ceiling? }`. Snapshot age defaults to five minutes and projection age to thirty minutes; both are configurable with explicit millisecond options. Add `--execute` only after reviewing dry-run output. Execute mode repeats platform dry-run preflight, rechecks freshness, performs the mutation, and reports the subsequent Yahoo lineup read as verified, mismatched, or failed.
 
 Yahoo commands read `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, and optionally `YAHOO_REDIRECT_URI` (default `oob`). Initial tokens can be supplied through `YAHOO_ACCESS_TOKEN`, `YAHOO_REFRESH_TOKEN`, and `YAHOO_TOKEN_EXPIRES_AT` as epoch milliseconds or an ISO timestamp.
 

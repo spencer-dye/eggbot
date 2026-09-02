@@ -55,6 +55,8 @@ Phase 7 needs to compare every managed roster player when constructing a lineup,
 
 `@eggbot/manager` is the reusable application-service boundary for the end-to-end lineup workflow. It composes snapshot capture, deterministic analytics, a decision engine, policy, and a platform executor without giving write authority to analytics or the agent. Its Phase 7 surface accepts only one lineup action, requires explicit dry-run or execute mode plus positive snapshot and projection age limits, rechecks snapshot freshness immediately before execution, validates custom policy/executor outputs against their inputs, and allows only one in-process run per manager instance. A completed run returns the exact snapshot, analytics, decision run, policy evaluation and approval, execution results, timestamps, and terminal status. Persistence, distributed locking, retries, reconciliation, and production scheduling remain Phase 11 concerns.
 
+Execute mode never calls a platform mutation directly after policy. The manager first invokes the injected executor in `dry-run` mode and requires every result to be a successful dry run, rechecks snapshot freshness after preflight, and only then invokes `execute`. When execution results are all confirmed, the manager re-reads the scoring-period lineup through an injected platform reader and records verification independently as `verified`, `mismatch`, or `failed`; an executor's success report is not silently treated as observed state convergence. Dry-run results, mutation results, and verification evidence remain separate fields in the workflow audit record.
+
 The first autonomous strategy remains in `@eggbot/agent-local`: a deterministic projection-based lineup engine. It requires complete projection coverage for every movable active/bench player by default, abstains on managed-roster integrity warnings, preserves reserve assignments, computes a maximum-projection legal active lineup, and proposes at most one `set-lineup` action only when the configured minimum gain is exceeded. It never proposes acquisitions, waivers, trades, or direct writes.
 
 ## Phase 6 public API changes
@@ -139,6 +141,7 @@ Policy evaluation is action-scoped: every proposed action has its own approved/r
 
 ## Deferred hardening decisions
 
+- Before production game-window automation, add provider-independent scoring-period lineup editability or player-lock state. Phase 7 cannot predict already-started-player locks because neither the normalized snapshot nor the platform read port currently exposes them; Yahoo remains authoritative during mandatory preflight. Distributed leases keyed by league, team, and scoring period remain Phase 11 operational hardening.
 - Before autonomous waiver management, add provider-independent waiver system, FAAB balance, priority, and acquisition-limit state based on Phase 3 snapshots; do not mirror Yahoo's full settings payload. Phase 2 deliberately labels dry-runs as local validation until that state exists.
 - Extend lineup preflight with provider lock state when Phase 3 establishes a normalized representation. Phase 2 validates the resulting slot allocation and filled starters but Yahoo remains authoritative for locks.
 - Keep `PlatformReference` and `FantasyGame.platformReference` until a second adapter provides evidence for a shared `GameId` design.

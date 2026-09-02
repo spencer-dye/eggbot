@@ -17,11 +17,15 @@ import {
   type ActionResult,
   type FantasyAction,
   type LeagueSnapshot,
+  type Lineup,
+  type PlayerId,
+  type RosterSlotId,
   type TeamId,
 } from '@eggbot/core';
 import type {
   ExecutionOptions,
   FantasyPlatformExecutor,
+  FantasyPlatformReader,
 } from '@eggbot/platform';
 import {
   createPolicyApproval,
@@ -49,6 +53,7 @@ export interface AutonomousLineupManagerOptions {
   readonly decisionEngine: DecisionEngine;
   readonly policyEngine: PolicyEngine;
   readonly executor: FantasyPlatformExecutor;
+  readonly lineupReader: Pick<FantasyPlatformReader, 'getLineup'>;
   readonly maxProjectionAgeMs: number;
   readonly clock?: () => Date;
   readonly runIdFactory?: () => string;
@@ -72,10 +77,55 @@ export type LineupManagementStatus =
   | 'no-action'
   | 'rejected'
   | 'stale-before-execution'
+  | 'preflight-failed'
   | 'dry-run'
   | 'executed'
   | 'execution-failed'
   | 'execution-uncertain';
+
+export type LineupVerificationIssue =
+  | {
+      readonly code: 'TEAM_MISMATCH';
+      readonly expectedTeamId: TeamId;
+      readonly observedTeamId: TeamId;
+    }
+  | {
+      readonly code: 'SCORING_PERIOD_MISMATCH';
+      readonly expectedScoringPeriod: string;
+      readonly observedScoringPeriod: string;
+    }
+  | {
+      readonly code: 'ASSIGNMENT_MISMATCH';
+      readonly slotId: RosterSlotId;
+      readonly expectedPlayerId: PlayerId;
+      readonly observedPlayerId?: PlayerId;
+    }
+  | {
+      readonly code: 'DUPLICATE_OBSERVED_SLOT';
+      readonly slotId: RosterSlotId;
+    }
+  | {
+      readonly code: 'UNEXPECTED_ASSIGNMENT';
+      readonly slotId: RosterSlotId;
+      readonly observedPlayerId: PlayerId;
+    };
+
+export type LineupVerification =
+  | { readonly status: 'not-applicable' | 'not-attempted' }
+  | {
+      readonly status: 'verified';
+      readonly observedLineup: Lineup;
+      readonly issues: readonly [];
+    }
+  | {
+      readonly status: 'mismatch';
+      readonly observedLineup: Lineup;
+      readonly issues: readonly LineupVerificationIssue[];
+    }
+  | {
+      readonly status: 'failed';
+      readonly error: { readonly code: string; readonly message: string };
+    };
 
 export interface LineupManagementRun {
   readonly id: string;
@@ -89,7 +139,9 @@ export interface LineupManagementRun {
   readonly policyEvaluation: PolicyEvaluation;
   readonly policyApproval?: PolicyApproval;
   readonly scopeIssues: readonly LineupScopeIssue[];
+  readonly preflightResults: readonly ActionResult[];
   readonly executionResults: readonly ActionResult[];
+  readonly verification: LineupVerification;
 }
 
 export class LineupManagementError extends Error {
@@ -113,6 +165,7 @@ export class AutonomousLineupManager {
   readonly #decisionEngine: DecisionEngine;
   readonly #policyEngine: PolicyEngine;
   readonly #executor: FantasyPlatformExecutor;
+  readonly #lineupReader: Pick<FantasyPlatformReader, 'getLineup'>;
   readonly #clock: () => Date;
   readonly #runIdFactory: () => string;
   readonly #decisionIdFactory: () => ReturnType<typeof decisionId>;
@@ -143,6 +196,7 @@ export class AutonomousLineupManager {
     this.#decisionEngine = options.decisionEngine;
     this.#policyEngine = options.policyEngine;
     this.#executor = options.executor;
+    this.#lineupReader = options.lineupReader;
     this.#clock = options.clock ?? (() => new Date());
     this.#runIdFactory = options.runIdFactory ?? randomUUID;
     this.#decisionIdFactory =
@@ -294,9 +348,10 @@ export class AutonomousLineupManager {
       });
     }
     const policyApproval = createPolicyApproval(policyEvaluation);
-    const preExecutionAt = this.#timestamp('preExecutionAt');
+    const approvedLineupAction = requireApprovedLineupAction(approvedActions);
+    const preflightAt = this.#timestamp('preflightAt');
     if (
-      Date.parse(preExecutionAt) - Date.parse(snapshot.capturedAt) >
+      Date.parse(preflightAt) - Date.parse(snapshot.capturedAt) >
       this.#maxSnapshotAgeMs
     ) {
       return this.#complete({
@@ -310,16 +365,74 @@ export class AutonomousLineupManager {
         policyEvaluation,
         policyApproval,
         scopeIssues,
+        verification: { status: 'not-attempted' },
+      });
+    }
+    const preflightResults = await this.#executor.execute(approvedActions, {
+      mode: 'dry-run',
+    });
+    validateExecutionResults(approvedActions, preflightResults, 'dry-run');
+    if (preflightResults.some(({ status }) => status !== 'dry-run')) {
+      return this.#complete({
+        id,
+        startedAt,
+        options,
+        status: 'preflight-failed',
+        snapshot,
+        analytics,
+        decisionRun,
+        policyEvaluation,
+        policyApproval,
+        scopeIssues,
+        preflightResults,
+        verification: { status: 'not-attempted' },
+      });
+    }
+    if (options.executionMode === 'dry-run') {
+      return this.#complete({
+        id,
+        startedAt,
+        options,
+        status: 'dry-run',
+        snapshot,
+        analytics,
+        decisionRun,
+        policyEvaluation,
+        policyApproval,
+        scopeIssues,
+        preflightResults,
+        verification: { status: 'not-applicable' },
+      });
+    }
+    const preExecuteAt = this.#timestamp('preExecuteAt');
+    if (
+      Date.parse(preExecuteAt) - Date.parse(snapshot.capturedAt) >
+      this.#maxSnapshotAgeMs
+    ) {
+      return this.#complete({
+        id,
+        startedAt,
+        options,
+        status: 'stale-before-execution',
+        snapshot,
+        analytics,
+        decisionRun,
+        policyEvaluation,
+        policyApproval,
+        scopeIssues,
+        preflightResults,
+        verification: { status: 'not-attempted' },
       });
     }
     const executionResults = await this.#executor.execute(approvedActions, {
-      mode: options.executionMode,
+      mode: 'execute',
     });
-    validateExecutionResults(
-      approvedActions,
-      executionResults,
-      options.executionMode,
-    );
+    validateExecutionResults(approvedActions, executionResults, 'execute');
+    const verification = executionResults.every(
+      ({ status }) => status === 'executed',
+    )
+      ? await this.#verify(approvedLineupAction, snapshot)
+      : ({ status: 'not-attempted' } as const);
     return this.#complete({
       id,
       startedAt,
@@ -331,8 +444,41 @@ export class AutonomousLineupManager {
       policyEvaluation,
       policyApproval,
       scopeIssues,
+      preflightResults,
       executionResults,
+      verification,
     });
+  }
+
+  async #verify(
+    action: Extract<FantasyAction, { type: 'set-lineup' }>,
+    sourceSnapshot: LeagueSnapshot,
+  ): Promise<LineupVerification> {
+    try {
+      const observedLineup = await this.#lineupReader.getLineup(
+        action.teamId,
+        action.scoringPeriod,
+      );
+      const issues = lineupVerificationIssues(
+        action,
+        sourceSnapshot,
+        observedLineup,
+      );
+      return issues.length === 0
+        ? { status: 'verified', observedLineup, issues: [] }
+        : { status: 'mismatch', observedLineup, issues };
+    } catch (error) {
+      return {
+        status: 'failed',
+        error: {
+          code: 'LINEUP_VERIFICATION_FAILED',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Unexpected lineup verification failure',
+        },
+      };
+    }
   }
 
   #complete(input: {
@@ -346,7 +492,9 @@ export class AutonomousLineupManager {
     readonly policyEvaluation: PolicyEvaluation;
     readonly policyApproval?: PolicyApproval;
     readonly scopeIssues: readonly LineupScopeIssue[];
+    readonly preflightResults?: readonly ActionResult[];
     readonly executionResults?: readonly ActionResult[];
+    readonly verification?: LineupVerification;
   }): LineupManagementRun {
     const completedAt = this.#timestamp('completedAt');
     if (Date.parse(completedAt) < Date.parse(input.startedAt)) {
@@ -369,7 +517,9 @@ export class AutonomousLineupManager {
         ? {}
         : { policyApproval: input.policyApproval }),
       scopeIssues: input.scopeIssues,
+      preflightResults: input.preflightResults ?? [],
       executionResults: input.executionResults ?? [],
+      verification: input.verification ?? { status: 'not-applicable' },
     };
   }
 
@@ -400,11 +550,91 @@ function validateExecutionResults(
     }
     if (
       (mode === 'dry-run' && result.status === 'executed') ||
+      (mode === 'dry-run' && result.status === 'execution-uncertain') ||
       (mode === 'execute' && result.status === 'dry-run')
     ) {
       executionContractError('Executor result contradicts requested mode');
     }
   });
+}
+
+function requireApprovedLineupAction(
+  actions: readonly FantasyAction[],
+): Extract<FantasyAction, { type: 'set-lineup' }> {
+  const action = actions[0];
+  if (actions.length !== 1 || action?.type !== 'set-lineup') {
+    throw new LineupManagementError(
+      'Policy approved an invalid Phase 7 action set',
+      { code: 'POLICY_CONTRACT_VIOLATION', stage: 'policy' },
+    );
+  }
+  return action;
+}
+
+function lineupVerificationIssues(
+  expected: Extract<FantasyAction, { type: 'set-lineup' }>,
+  sourceSnapshot: LeagueSnapshot,
+  observed: Lineup,
+): readonly LineupVerificationIssue[] {
+  const issues: LineupVerificationIssue[] = [];
+  if (observed.teamId !== expected.teamId) {
+    issues.push({
+      code: 'TEAM_MISMATCH',
+      expectedTeamId: expected.teamId,
+      observedTeamId: observed.teamId,
+    });
+  }
+  if (observed.scoringPeriod !== expected.scoringPeriod) {
+    issues.push({
+      code: 'SCORING_PERIOD_MISMATCH',
+      expectedScoringPeriod: expected.scoringPeriod,
+      observedScoringPeriod: observed.scoringPeriod,
+    });
+  }
+  const observedBySlot = new Map<RosterSlotId, PlayerId>();
+  const duplicateSlots = new Set<RosterSlotId>();
+  for (const assignment of observed.assignments) {
+    if (observedBySlot.has(assignment.slotId)) {
+      duplicateSlots.add(assignment.slotId);
+    }
+    observedBySlot.set(assignment.slotId, assignment.playerId);
+  }
+  for (const slotId of duplicateSlots) {
+    issues.push({ code: 'DUPLICATE_OBSERVED_SLOT', slotId });
+  }
+  const sourceLineup = sourceSnapshot.teams.find(
+    ({ team }) => team.id === expected.teamId,
+  )?.lineup;
+  const movedPlayerIds = new Set(
+    expected.assignments.map(({ playerId }) => playerId),
+  );
+  const expectedBySlot = new Map(
+    sourceLineup?.assignments
+      .filter(({ playerId }) => !movedPlayerIds.has(playerId))
+      .map(({ slotId, playerId }) => [slotId, playerId]),
+  );
+  for (const assignment of expected.assignments) {
+    expectedBySlot.set(assignment.slotId, assignment.playerId);
+  }
+  for (const [slotId, expectedPlayerId] of expectedBySlot) {
+    const observedPlayerId = observedBySlot.get(slotId);
+    if (observedPlayerId === expectedPlayerId) continue;
+    issues.push({
+      code: 'ASSIGNMENT_MISMATCH',
+      slotId,
+      expectedPlayerId,
+      ...(observedPlayerId === undefined ? {} : { observedPlayerId }),
+    });
+  }
+  for (const [slotId, observedPlayerId] of observedBySlot) {
+    if (expectedBySlot.has(slotId)) continue;
+    issues.push({
+      code: 'UNEXPECTED_ASSIGNMENT',
+      slotId,
+      observedPlayerId,
+    });
+  }
+  return issues;
 }
 
 function validatePolicyEvaluation(

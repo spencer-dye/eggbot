@@ -27,6 +27,7 @@ const league = leagueId('league');
 const team = teamId('team');
 const qbSlot = rosterSlotId('qb');
 const benchSlot = rosterSlotId('bench');
+const extraBenchSlot = rosterSlotId('extra-bench');
 const starter = {
   id: playerId('starter'),
   fullName: 'Starter',
@@ -35,6 +36,11 @@ const starter = {
 const backup = {
   id: playerId('backup'),
   fullName: 'Backup',
+  eligiblePositions: ['QB'] as const,
+};
+const extraPlayer = {
+  id: playerId('extra-player'),
+  fullName: 'Extra Player',
   eligiblePositions: ['QB'] as const,
 };
 
@@ -51,7 +57,9 @@ describe('AutonomousLineupManager', () => {
     expect(result.decisionRun.decision.proposedActions).toHaveLength(1);
     expect(result.policyEvaluation.results[0]?.status).toBe('approved');
     expect(result.policyApproval?.actions).toHaveLength(1);
-    expect(result.executionResults[0]?.status).toBe('dry-run');
+    expect(result.preflightResults[0]?.status).toBe('dry-run');
+    expect(result.executionResults).toEqual([]);
+    expect(result.verification.status).toBe('not-applicable');
     expect(executor.executeMock).toHaveBeenCalledWith(
       result.policyApproval?.actions,
       { mode: 'dry-run' },
@@ -123,10 +131,11 @@ describe('AutonomousLineupManager', () => {
   });
 
   it('rechecks freshness immediately before execution', async () => {
-    const executor = executorReturning('dry-run');
+    const executor = executorReturning('executed');
     const manager = createManager({
       executor,
       clock: clockFrom([
+        '2026-09-01T12:01:00.000Z',
         '2026-09-01T12:01:00.000Z',
         '2026-09-01T12:01:00.000Z',
         '2026-09-01T12:01:00.000Z',
@@ -137,11 +146,170 @@ describe('AutonomousLineupManager', () => {
       ]),
     });
 
-    const result = await manager.run(runOptions());
+    const result = await manager.run(runOptions('execute'));
 
     expect(result.status).toBe('stale-before-execution');
     expect(result.policyApproval?.actions).toHaveLength(1);
-    expect(executor.executeMock).not.toHaveBeenCalled();
+    expect(result.preflightResults[0]?.status).toBe('dry-run');
+    expect(executor.executeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires a successful dry-run before execution and verifies observed state', async () => {
+    const executor = executorReturning('executed');
+    const lineupReader = {
+      getLineup: vi.fn(() => Promise.resolve(verifiedLineup)),
+    };
+    const result = await createManager({ executor, lineupReader }).run(
+      runOptions('execute'),
+    );
+
+    expect(executor.executeMock).toHaveBeenNthCalledWith(
+      1,
+      result.policyApproval?.actions,
+      { mode: 'dry-run' },
+    );
+    expect(executor.executeMock).toHaveBeenNthCalledWith(
+      2,
+      result.policyApproval?.actions,
+      { mode: 'execute' },
+    );
+    expect(result.status).toBe('executed');
+    expect(result.preflightResults[0]?.status).toBe('dry-run');
+    expect(result.executionResults[0]?.status).toBe('executed');
+    expect(result.verification).toEqual({
+      status: 'verified',
+      observedLineup: verifiedLineup,
+      issues: [],
+    });
+    expect(lineupReader.getLineup).toHaveBeenCalledWith(team, '3');
+  });
+
+  it('does not mutate when platform preflight fails', async () => {
+    const execute = vi.fn((actions: readonly FantasyAction[]) =>
+      Promise.resolve(
+        actions.map((action): ActionResult => ({
+          status: 'failed',
+          action,
+          error: {
+            code: 'LOCKED',
+            message: 'Player is locked',
+            retryable: false,
+          },
+        })),
+      ),
+    );
+
+    const result = await createManager({ executor: { execute } }).run(
+      runOptions('execute'),
+    );
+
+    expect(result.status).toBe('preflight-failed');
+    expect(result.preflightResults[0]?.status).toBe('failed');
+    expect(result.executionResults).toEqual([]);
+    expect(result.verification.status).toBe('not-attempted');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('records verification mismatches and read failures separately', async () => {
+    const mismatch = await createManager({
+      executor: executorReturning('executed'),
+      lineupReader: {
+        getLineup: () => Promise.resolve(snapshot.teams[0]!.lineup),
+      },
+    }).run(runOptions('execute'));
+    const failed = await createManager({
+      executor: executorReturning('executed'),
+      lineupReader: {
+        getLineup: () => Promise.reject(new Error('Yahoo read failed')),
+      },
+    }).run(runOptions('execute'));
+
+    expect(mismatch.status).toBe('executed');
+    expect(mismatch.verification).toMatchObject({
+      status: 'mismatch',
+      issues: [
+        { code: 'ASSIGNMENT_MISMATCH', slotId: qbSlot },
+        { code: 'ASSIGNMENT_MISMATCH', slotId: benchSlot },
+      ],
+    });
+    expect(failed.status).toBe('executed');
+    expect(failed.verification).toEqual({
+      status: 'failed',
+      error: {
+        code: 'LINEUP_VERIFICATION_FAILED',
+        message: 'Yahoo read failed',
+      },
+    });
+  });
+
+  it('verifies unchanged snapshot assignments as part of the intended lineup', async () => {
+    const expandedSnapshot: LeagueSnapshot = {
+      ...snapshot,
+      league: {
+        ...snapshot.league,
+        settings: {
+          ...snapshot.league.settings,
+          rosterSlots: [
+            ...snapshot.league.settings.rosterSlots,
+            {
+              id: extraBenchSlot,
+              name: 'BN',
+              kind: 'bench',
+              eligiblePositions: ['QB'],
+            },
+          ],
+        },
+      },
+      teams: [
+        {
+          ...snapshot.teams[0]!,
+          roster: {
+            teamId: team,
+            entries: [
+              ...snapshot.teams[0]!.roster.entries,
+              { player: extraPlayer },
+            ],
+          },
+          lineup: {
+            ...snapshot.teams[0]!.lineup,
+            assignments: [
+              ...snapshot.teams[0]!.lineup.assignments,
+              { slotId: extraBenchSlot, playerId: extraPlayer.id },
+            ],
+          },
+        },
+      ],
+    };
+    const result = await createManager({
+      snapshotService: {
+        capture: () => Promise.resolve(expandedSnapshot),
+      },
+      projectionProvider: {
+        getProjections: () =>
+          Promise.resolve({
+            ...projections,
+            players: [
+              ...projections.players,
+              { playerId: extraPlayer.id, points: 5 },
+            ],
+          }),
+      },
+      executor: executorReturning('executed'),
+      lineupReader: {
+        getLineup: () => Promise.resolve(verifiedLineup),
+      },
+    }).run(runOptions('execute'));
+
+    expect(result.verification).toMatchObject({
+      status: 'mismatch',
+      issues: [
+        {
+          code: 'ASSIGNMENT_MISMATCH',
+          slotId: extraBenchSlot,
+          expectedPlayerId: extraPlayer.id,
+        },
+      ],
+    });
   });
 
   it('records failed and uncertain executor outcomes distinctly', async () => {
@@ -246,6 +414,9 @@ function createManager(
       guardrails: { maxSnapshotAgeMs: 5 * 60 * 1_000 },
     }),
     executor: executorReturning('dry-run'),
+    lineupReader: {
+      getLineup: vi.fn(() => Promise.resolve(verifiedLineup)),
+    },
     maxProjectionAgeMs: 30 * 60 * 1_000,
     clock: () => new Date('2026-09-01T12:01:00.000Z'),
     runIdFactory: () => 'run-1',
@@ -299,32 +470,36 @@ function engineReturning(
 function executorReturning(
   status: ActionResult['status'],
 ): FantasyPlatformExecutor & { executeMock: ReturnType<typeof vi.fn> } {
-  const execute = vi.fn((actions: readonly FantasyAction[]) =>
-    Promise.resolve(
-      actions.map((action): ActionResult => {
-        if (status === 'dry-run') {
+  const execute = vi.fn(
+    (
+      actions: readonly FantasyAction[],
+      options: { readonly mode: 'dry-run' | 'execute' },
+    ) =>
+      Promise.resolve(
+        actions.map((action): ActionResult => {
+          if (options.mode === 'dry-run') {
+            return {
+              status: 'dry-run',
+              action,
+              summary: 'Would set lineup',
+              validation: 'local',
+            };
+          }
+          if (status === 'executed') return { status, action };
+          if (status === 'execution-uncertain') {
+            return {
+              status,
+              action,
+              error: { code: 'UNKNOWN', message: 'Unknown', retryable: false },
+            };
+          }
           return {
-            status,
+            status: 'failed',
             action,
-            summary: 'Would set lineup',
-            validation: 'local',
+            error: { code: 'FAILED', message: 'Failed', retryable: false },
           };
-        }
-        if (status === 'executed') return { status, action };
-        if (status === 'execution-uncertain') {
-          return {
-            status,
-            action,
-            error: { code: 'UNKNOWN', message: 'Unknown', retryable: false },
-          };
-        }
-        return {
-          status: 'failed',
-          action,
-          error: { code: 'FAILED', message: 'Failed', retryable: false },
-        };
-      }),
-    ),
+        }),
+      ),
   );
   return {
     execute,
@@ -360,6 +535,15 @@ const projections = {
   players: [
     { playerId: starter.id, points: 10 },
     { playerId: backup.id, points: 20 },
+  ],
+};
+
+const verifiedLineup = {
+  teamId: team,
+  scoringPeriod: '3',
+  assignments: [
+    { slotId: qbSlot, playerId: backup.id },
+    { slotId: benchSlot, playerId: starter.id },
   ],
 };
 

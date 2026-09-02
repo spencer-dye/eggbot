@@ -95,6 +95,8 @@ async function main(args: readonly string[]): Promise<void> {
         'autonomous-lineup-dry-run',
         'autonomous-lineup-execution',
         'freshness-enforcement',
+        'mandatory-platform-preflight',
+        'post-execution-verification',
         'complete-audit-record',
       ],
       phase: 7,
@@ -308,6 +310,7 @@ async function main(args: readonly string[]): Promise<void> {
           reader,
           allowWrites: shouldExecute,
         }),
+        lineupReader: reader,
         maxProjectionAgeMs:
           readNumberOption(commandArgs, '--max-projection-age-ms') ??
           30 * 60 * 1_000,
