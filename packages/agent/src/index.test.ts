@@ -208,6 +208,7 @@ describe('runDecisionEngine', () => {
     expect(result).toEqual({
       engine: { id: 'local-test', version: '1.0.0', kind: 'deterministic' },
       sourceSnapshotId: snapshot.id,
+      snapshot,
       managedTeamId,
       startedAt: '2026-09-01T12:01:00.000Z',
       completedAt: '2026-09-01T12:01:00.250Z',

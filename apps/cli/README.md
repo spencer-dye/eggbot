@@ -1,6 +1,6 @@
 # `@eggbot/cli`
 
-The default `pnpm cli` command is a credential-free composition smoke test. It reports the Phase 5 safe local no-action decision engine without invoking any platform or model provider. Phase 1 also provides manual Yahoo read commands:
+The default `pnpm cli` command is a credential-free composition smoke test. It reports the safe local no-action decision engine and Phase 6 policy capabilities without invoking any platform or model provider. Phase 1 also provides manual Yahoo read commands:
 
 ```sh
 pnpm cli yahoo help

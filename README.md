@@ -1,6 +1,6 @@
 # EggBot
 
-EggBot is a provider-independent TypeScript framework for building safe, inspectable fantasy-football automation. Phases 0 through 5 provide the core domain, Yahoo reads and guarded writes, normalized league snapshots, deterministic analytics, and audited provider-neutral decision-engine execution.
+EggBot is a provider-independent TypeScript framework for building safe, inspectable fantasy-football automation. Phases 0 through 6 provide the core domain, Yahoo reads and guarded writes, normalized league snapshots, deterministic analytics, audited decision-engine execution, and deterministic policy approval.
 
 ## Requirements
 

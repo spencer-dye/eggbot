@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 5 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 6 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -28,7 +28,7 @@ Implemented a provider-neutral proposal and audited-run boundary with context/ou
 
 ## Phase 6 — Policy engine
 
-Expand guardrails, validation, structured rejection reasons, conflict detection, and execution approval.
+Implemented snapshot-bound validation, mandatory legality rules, configurable guardrails, structured rejection reasons, cross-action conflict detection, custom-rule composition, and explicit provenance-bearing execution approval.
 
 ## Phase 7 — Autonomous lineup management
 

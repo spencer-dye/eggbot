@@ -17,7 +17,9 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **FantasyAction** is inspectable intent to change platform state. It models lineup setting, standalone add and drop, add/drop, and waiver-claim actions without conflating immediate acquisitions with pending claims.
 - **DecisionProposal** is untrusted decision-engine output: rationale and proposed action intents without host-owned decision/action identities or audit timestamps.
 - **FantasyDecision** records a host-assigned decision identifier, timestamp, rationale, and proposed actions. It does not approve or execute them.
-- **DecisionRun** associates a validated `FantasyDecision` with its engine identity/version, source snapshot, exact analytics, managed team, and execution window.
+- **DecisionRun** associates a validated `FantasyDecision` with its engine identity/version, exact source snapshot and analytics, managed team, and execution window.
+- **PolicyEvaluation** records every deterministic approval or rejection for a decision run, with structured rule attribution and conflict context.
+- **PolicyApproval** is the explicitly derived, provenance-bearing subset of actions policy approved for possible execution. It is not proof that a platform will accept them.
 - **ActionResult** records a local dry run, a durably recorded execution, an uncertain execution outcome, or a failed attempt with a code, message, and retryability signal.
 - **LeagueSnapshot** is a normalized, timestamped observation window containing league-wide state for one scoring period. It groups team rosters and lineups, standings, matchups, acquisition pools, and recent transactions without claiming provider-level atomic consistency.
 
@@ -38,6 +40,8 @@ A transaction is historical state read from a platform. An action is EggBot's pr
 ### Proposal versus execution
 
 Actions inside a decision are proposed. Policy evaluation records an approved or rejected result for every action and retains all rejection issues. Orchestration explicitly derives the approved subset. Only a platform executor can attempt an approved action, producing an `ActionResult`. These stages stay distinct for audit, dry-run, replay, and safety controls.
+
+Policy distinguishes invalid orchestration context from denied intent. A decision-run/snapshot mismatch is a `PolicyValidationError`; an unrostered drop, unavailable acquisition, illegal lineup, protected player, configured-limit violation, duplicate intent, or cross-action conflict is a structured action rejection. Policy uses snapshot state and therefore cannot replace provider-side validation against newer authoritative state.
 
 An action ID is also its execution idempotency key. Reusing an ID for different action data is an error. Consumers that execute transaction writes must provide durable execution-journal storage. A pending journal intent or `execution-uncertain` result requires explicit provider reconciliation and must never be automatically retried. A dry run is explicitly local validation and does not claim the provider will accept the request.
 

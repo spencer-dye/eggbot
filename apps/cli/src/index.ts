@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 
 import { sumProjectedStartingLineupPoints } from '@eggbot/analytics';
 import { createNoActionDecisionEngine } from '@eggbot/agent-local';
+import { createPolicyEngine } from '@eggbot/policy';
 import {
   actionId,
   leagueId,
@@ -47,6 +48,7 @@ async function main(args: readonly string[]): Promise<void> {
       version: '1.0.0',
       rationale: 'No autonomous decision strategy is configured.',
     });
+    const policyEngine = createPolicyEngine();
     printJson({
       analyticsResult: sumProjectedStartingLineupPoints(
         emptyLineup,
@@ -66,8 +68,21 @@ async function main(args: readonly string[]): Promise<void> {
         kind: decisionEngine.kind,
         behavior: 'no-action',
       },
+      policyCapabilities: [
+        'snapshot-bound-validation',
+        'structured-rejections',
+        'configurable-guardrails',
+        'conflict-detection',
+        'execution-approval',
+      ],
+      policyEngine: {
+        id: policyEngine.id,
+        version: policyEngine.version,
+        guardrails: policyEngine.guardrails,
+        ruleIds: policyEngine.ruleIds,
+      },
       platformBoundary: yahooAdapterMetadata,
-      phase: 5,
+      phase: 6,
       writeOperations: 'guarded',
     });
     return;

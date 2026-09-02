@@ -2,7 +2,7 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 5 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, and audited decision-engine execution without choosing a league format, model provider, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 6 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision-engine execution, and deterministic policy approval without choosing a league format, model provider, database, scheduler, or deployment environment.
 
 ## Workspace layout
 
@@ -14,7 +14,7 @@ EggBot is a reusable, provider-independent framework for safe fantasy-football a
 | `@eggbot/snapshot`    | Normalized multi-read league snapshot capture              | `core`, `platform`            |
 | `@eggbot/agent`       | Provider-neutral decision-engine port                      | `core`, `analytics`           |
 | `@eggbot/agent-local` | Safe local decision-engine implementations                 | `agent`                       |
-| `@eggbot/policy`      | Deterministic approval/rejection boundary                  | `core`                        |
+| `@eggbot/policy`      | Deterministic approval/rejection boundary                  | `core`, `agent`               |
 | `@eggbot/analytics`   | Deterministic calculations and analytics port              | `core`                        |
 | `@eggbot/storage`     | Persistence port, with no implementation                   | None                          |
 | `@eggbot/scheduler`   | Scheduling port, with no implementation                    | None                          |
@@ -36,16 +36,25 @@ flowchart TD
   LS --> C
   A --> N
   A --> C[core]
+  P --> A
   P --> C
   N --> C
   FP --> C
 ```
 
+## Phase 6 public API changes
+
+The original `PolicyContext` contained an independently supplied `League` and `Roster`, while `PolicyEngine.evaluate` accepted a bare `FantasyDecision`. That surface could not prove the decision, analytics, roster, lineup, acquisition pools, and scoring period came from the same observation. Phase 5 also initially retained exact analytics but only a snapshot ID on `DecisionRun`, allowing a different snapshot object to be supplied under the same ID. It also evaluated each action in isolation, so duplicate or mutually conflicting actions could each be approved.
+
+Phase 6 makes `DecisionRun` retain the exact immutable `LeagueSnapshot` alongside its analytics. Policy accepts only the run plus an evaluation timestamp, eliminating independently supplied state. Run provenance mismatches and invalid policy configuration are programmer errors represented by `PolicyValidationError`. Action legality remains a normal, typed rejection. Mandatory built-in rules check action scope, current roster ownership, captured free-agent versus waiver availability, lineup slots/players/eligibility/resulting completeness, roster capacity, same-player add/drop, duplicate identities and intents, and cross-action player or lineup conflicts.
+
+Applications can configure protected players, decision and roster-mutation limits, maximum waiver bids, and snapshot age. Custom deterministic rules return issue data without controlling action IDs or rule attribution; the engine produces normalized `PolicyIssue` records with rule IDs, resource references, and related conflicting actions. Evaluations retain policy identity/version, the effective guardrails, and every configured custom-rule ID for reproducibility. `createPolicyApproval` derives an immutable, provenance-bearing batch containing only approved actions. Policy never receives a platform executor and never performs writes; provider preflight remains an independent final safeguard against state changes after snapshot capture.
+
 ## Phase 5 public API changes
 
 The original `DecisionEngine.decide()` returned a complete `FantasyDecision`. That allowed an engine—including a future external model adapter—to choose audit timestamps, decision identifiers, and action idempotency keys, and there was no standard boundary validating rationale, league/team scope, or lineup scoring period. Calling the engine also produced no record connecting its identity and version to the source snapshot and exact analytics.
 
-Phase 5 changes engine output to a `DecisionProposal`: rationale plus inspectable action intents, but no decision or action identities and no audit timestamps. `runDecisionEngine` validates the context and proposal, assigns decision and action IDs plus timestamps through injected application-owned functions, and returns a `DecisionRun` that records engine identity, source snapshot, managed team, exact analytics, timing, and the resulting `FantasyDecision`. Proposal validation rebuilds every action and lineup assignment from an explicit field allowlist and passes every identifier through the core branded-ID parsers; unknown model-supplied fields cannot flow into policy, fingerprints, audit records, or executors. Generated action IDs must be non-empty and unique within the decision. Invalid output fails closed with a typed `DecisionValidationError`; provider failures remain provider failures rather than being mislabeled as validation errors.
+Phase 5 changes engine output to a `DecisionProposal`: rationale plus inspectable action intents, but no decision or action identities and no audit timestamps. `runDecisionEngine` validates the context and proposal, assigns decision and action IDs plus timestamps through injected application-owned functions, and returns a `DecisionRun` that records engine identity, the exact source snapshot and analytics, managed team, timing, and the resulting `FantasyDecision`. Proposal validation rebuilds every action and lineup assignment from an explicit field allowlist and passes every identifier through the core branded-ID parsers; unknown model-supplied fields cannot flow into policy, fingerprints, audit records, or executors. Generated action IDs must be non-empty and unique within the decision. Invalid output fails closed with a typed `DecisionValidationError`; provider failures remain provider failures rather than being mislabeled as validation errors.
 
 `@eggbot/agent-local` is the first separate implementation package. It provides a safe no-action engine and an injected-function adapter for deterministic, human-mediated, or test-local decision logic. It has no platform reader, executor, credentials, network client, or model SDK. Concrete model-provider packages remain deferred until a provider is deliberately selected; they can implement the same `DecisionEngine` port without changing core or receiving write authority.
 

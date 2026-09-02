@@ -67,6 +67,7 @@ export interface DecisionRunnerOptions {
 export interface DecisionRun {
   readonly engine: DecisionEngineDescriptor;
   readonly sourceSnapshotId: SnapshotId;
+  readonly snapshot: LeagueSnapshot;
   readonly managedTeamId: TeamId;
   readonly startedAt: string;
   readonly completedAt: string;
@@ -171,6 +172,7 @@ export async function runDecisionEngine(
   return {
     engine: { id: engine.id, version: engine.version, kind: engine.kind },
     sourceSnapshotId: validatedContext.snapshot.id,
+    snapshot: validatedContext.snapshot,
     managedTeamId: validatedContext.managedTeamId,
     startedAt: started.toISOString(),
     completedAt,
