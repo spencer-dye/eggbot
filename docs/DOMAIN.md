@@ -15,7 +15,9 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **Standing** records a team's rank and any standings facts the platform supplies. Win/loss records and points are optional so the model does not assume one competition format.
 - **Transaction** records a completed or pending league transaction as one or more normalized player moves. It is observed platform history, not an executable `FantasyAction`.
 - **FantasyAction** is inspectable intent to change platform state. It models lineup setting, standalone add and drop, add/drop, and waiver-claim actions without conflating immediate acquisitions with pending claims.
-- **FantasyDecision** records a decision identifier, timestamp, rationale, and proposed actions. It does not approve or execute them.
+- **DecisionProposal** is untrusted decision-engine output: rationale and proposed action intents without host-owned decision/action identities or audit timestamps.
+- **FantasyDecision** records a host-assigned decision identifier, timestamp, rationale, and proposed actions. It does not approve or execute them.
+- **DecisionRun** associates a validated `FantasyDecision` with its engine identity/version, source snapshot, exact analytics, managed team, and execution window.
 - **ActionResult** records a local dry run, a durably recorded execution, an uncertain execution outcome, or a failed attempt with a code, message, and retryability signal.
 - **LeagueSnapshot** is a normalized, timestamped observation window containing league-wide state for one scoring period. It groups team rosters and lineups, standings, matchups, acquisition pools, and recent transactions without claiming provider-level atomic consistency.
 
@@ -27,7 +29,7 @@ A roster answers “which players does this team control?” A lineup answers �
 
 ### Decision versus action
 
-A decision explains why zero or more changes are proposed. An action is one structured unit of intent. Neither performs a mutation.
+A decision explains why zero or more changes are proposed. An action is one structured unit of intent. Neither performs a mutation. Engines return a `DecisionProposal`; the agent runner validates its scope and assigns decision audit metadata before exposing a `FantasyDecision`.
 
 ### Transaction versus action
 

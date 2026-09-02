@@ -2,22 +2,23 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 4 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, and deterministic analytics without choosing a league format, model provider, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 5 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, and audited decision-engine execution without choosing a league format, model provider, database, scheduler, or deployment environment.
 
 ## Workspace layout
 
-| Workspace           | Responsibility                                             | Direct workspace dependencies |
-| ------------------- | ---------------------------------------------------------- | ----------------------------- |
-| `@eggbot/core`      | Stable domain vocabulary, opaque IDs, actions, and results | None                          |
-| `@eggbot/platform`  | Provider-neutral read and execution ports                  | `core`                        |
-| `@eggbot/yahoo`     | Yahoo OAuth, read transport, validation, and mapping       | `core`, `platform`            |
-| `@eggbot/snapshot`  | Normalized multi-read league snapshot capture              | `core`, `platform`            |
-| `@eggbot/agent`     | Provider-neutral decision-engine port                      | `core`, `analytics`           |
-| `@eggbot/policy`    | Deterministic approval/rejection boundary                  | `core`                        |
-| `@eggbot/analytics` | Deterministic calculations and analytics port              | `core`                        |
-| `@eggbot/storage`   | Persistence port, with no implementation                   | None                          |
-| `@eggbot/scheduler` | Scheduling port, with no implementation                    | None                          |
-| `@eggbot/cli`       | Application composition proof                              | Public APIs of all packages   |
+| Workspace             | Responsibility                                             | Direct workspace dependencies |
+| --------------------- | ---------------------------------------------------------- | ----------------------------- |
+| `@eggbot/core`        | Stable domain vocabulary, opaque IDs, actions, and results | None                          |
+| `@eggbot/platform`    | Provider-neutral read and execution ports                  | `core`                        |
+| `@eggbot/yahoo`       | Yahoo OAuth, read transport, validation, and mapping       | `core`, `platform`            |
+| `@eggbot/snapshot`    | Normalized multi-read league snapshot capture              | `core`, `platform`            |
+| `@eggbot/agent`       | Provider-neutral decision-engine port                      | `core`, `analytics`           |
+| `@eggbot/agent-local` | Safe local decision-engine implementations                 | `agent`                       |
+| `@eggbot/policy`      | Deterministic approval/rejection boundary                  | `core`                        |
+| `@eggbot/analytics`   | Deterministic calculations and analytics port              | `core`                        |
+| `@eggbot/storage`     | Persistence port, with no implementation                   | None                          |
+| `@eggbot/scheduler`   | Scheduling port, with no implementation                    | None                          |
+| `@eggbot/cli`         | Application composition proof                              | Public APIs of all packages   |
 
 Packages expose a single explicit root entry point. Deep imports are not part of the public API. TypeScript project references and pnpm workspace links enforce an acyclic build graph.
 
@@ -30,6 +31,7 @@ flowchart TD
   CLI --> S[storage port]
   CLI --> J[scheduler port]
   Y[Yahoo adapter] --> FP
+  AL[local agent implementations] --> A
   LS[snapshot capture] --> FP
   LS --> C
   A --> N
@@ -38,6 +40,14 @@ flowchart TD
   N --> C
   FP --> C
 ```
+
+## Phase 5 public API changes
+
+The original `DecisionEngine.decide()` returned a complete `FantasyDecision`. That allowed an engine—including a future external model adapter—to choose audit timestamps, decision identifiers, and action idempotency keys, and there was no standard boundary validating rationale, league/team scope, or lineup scoring period. Calling the engine also produced no record connecting its identity and version to the source snapshot and exact analytics.
+
+Phase 5 changes engine output to a `DecisionProposal`: rationale plus inspectable action intents, but no decision or action identities and no audit timestamps. `runDecisionEngine` validates the context and proposal, assigns decision and action IDs plus timestamps through injected application-owned functions, and returns a `DecisionRun` that records engine identity, source snapshot, managed team, exact analytics, timing, and the resulting `FantasyDecision`. Generated action IDs must be non-empty and unique within the decision. Invalid output fails closed with a typed `DecisionValidationError`; provider failures remain provider failures rather than being mislabeled as validation errors.
+
+`@eggbot/agent-local` is the first separate implementation package. It provides a safe no-action engine and an injected-function adapter for deterministic, human-mediated, or test-local decision logic. It has no platform reader, executor, credentials, network client, or model SDK. Concrete model-provider packages remain deferred until a provider is deliberately selected; they can implement the same `DecisionEngine` port without changing core or receiving write authority.
 
 ## Domain and platform separation
 
@@ -121,7 +131,7 @@ platform reads -> EggBot domain -> deterministic analytics -> decision proposal
 decision proposal -> policy evaluation -> approved actions -> platform executor
 ```
 
-A `DecisionEngine` receives domain context and analytics, not credentials or an executor. It returns a `FantasyDecision` containing rationale and proposed actions. Creating either object has no side effect. The policy engine evaluates every proposed action and returns an explicit approved or rejected result. Only an application composition root may pass approved actions to an executor.
+A `DecisionEngine` receives domain context and analytics, not credentials or an executor. It returns a `DecisionProposal` containing rationale and action intents. The host runner validates that proposal and creates the `FantasyDecision`; neither operation has platform side effects. The policy engine evaluates every proposed action and returns an explicit approved or rejected result. Only an application composition root may pass approved actions to an executor.
 
 `ActionResult` records successful execution metadata, an actionable failure, or an explicitly uncertain outcome without collapsing proposal, approval, and execution into one operation.
 

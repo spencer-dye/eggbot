@@ -1,14 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  actionId,
+  decisionId,
   leagueId,
+  playerId,
   snapshotId,
   teamId,
   type LeagueSnapshot,
 } from '@eggbot/core';
 import type { LeagueAnalytics } from '@eggbot/analytics';
 
-import { createDecisionContext } from './index.js';
+import {
+  createDecisionContext,
+  DecisionValidationError,
+  runDecisionEngine,
+  validateDecisionProposal,
+  type DecisionEngine,
+  type FantasyActionIntent,
+} from './index.js';
 
 const managedTeamId = teamId('managed-team');
 const snapshot: LeagueSnapshot = {
@@ -156,3 +166,204 @@ describe('createDecisionContext', () => {
     );
   });
 });
+
+describe('runDecisionEngine', () => {
+  it('assigns host-owned metadata and records engine provenance', async () => {
+    const engine: DecisionEngine = {
+      id: 'local-test',
+      version: '1.0.0',
+      kind: 'deterministic',
+      decide: () =>
+        Promise.resolve({
+          rationale: 'Propose a scoped acquisition.',
+          proposedActions: [
+            {
+              type: 'add-player',
+              leagueId: snapshot.league.id,
+              teamId: managedTeamId,
+              playerId: playerId('player-1'),
+            },
+          ],
+        }),
+    };
+    const times = [
+      new Date('2026-09-01T12:01:00.000Z'),
+      new Date('2026-09-01T12:01:00.250Z'),
+    ];
+
+    const result = await runDecisionEngine(
+      engine,
+      { snapshot, managedTeamId, analytics },
+      {
+        clock: () => {
+          const value = times.shift();
+          if (value === undefined) throw new Error('clock exhausted');
+          return value;
+        },
+        decisionIdFactory: () => decisionId('decision-1'),
+        actionIdFactory: (index) => actionId(`action-${index}`),
+      },
+    );
+
+    expect(result).toEqual({
+      engine: { id: 'local-test', version: '1.0.0', kind: 'deterministic' },
+      sourceSnapshotId: snapshot.id,
+      managedTeamId,
+      startedAt: '2026-09-01T12:01:00.000Z',
+      completedAt: '2026-09-01T12:01:00.250Z',
+      analytics,
+      decision: {
+        id: 'decision-1',
+        createdAt: '2026-09-01T12:01:00.250Z',
+        rationale: 'Propose a scoped acquisition.',
+        proposedActions: [
+          {
+            id: 'action-0',
+            type: 'add-player',
+            leagueId: snapshot.league.id,
+            teamId: managedTeamId,
+            playerId: 'player-1',
+          },
+        ],
+      },
+    });
+  });
+
+  it('propagates engine failures without converting them to validation errors', async () => {
+    const providerError = new Error('provider unavailable');
+    const engine: DecisionEngine = {
+      id: 'external-test',
+      version: '1.0.0',
+      kind: 'external-service',
+      decide: () => Promise.reject(providerError),
+    };
+
+    await expect(
+      runDecisionEngine(
+        engine,
+        { snapshot, managedTeamId, analytics },
+        {
+          clock: () => new Date('2026-09-01T12:01:00.000Z'),
+          decisionIdFactory: () => decisionId('unused'),
+          actionIdFactory: () => actionId('unused'),
+        },
+      ),
+    ).rejects.toBe(providerError);
+  });
+
+  it('rejects duplicate host-generated action IDs', async () => {
+    const engine: DecisionEngine = {
+      id: 'local-test',
+      version: '1.0.0',
+      kind: 'deterministic',
+      decide: () =>
+        Promise.resolve({
+          rationale: 'Two proposed acquisitions.',
+          proposedActions: [
+            {
+              type: 'add-player',
+              leagueId: snapshot.league.id,
+              teamId: managedTeamId,
+              playerId: playerId('player-1'),
+            },
+            {
+              type: 'add-player',
+              leagueId: snapshot.league.id,
+              teamId: managedTeamId,
+              playerId: playerId('player-2'),
+            },
+          ],
+        }),
+    };
+
+    await expectDecisionErrorAsync(
+      () =>
+        runDecisionEngine(
+          engine,
+          { snapshot, managedTeamId, analytics },
+          {
+            clock: () => new Date('2026-09-01T12:01:00.000Z'),
+            decisionIdFactory: () => decisionId('decision-2'),
+            actionIdFactory: () => actionId('duplicate'),
+          },
+        ),
+      'DUPLICATE_ACTION_ID',
+    );
+  });
+});
+
+describe('validateDecisionProposal', () => {
+  const context = { snapshot, managedTeamId, analytics };
+  const validAction: FantasyActionIntent = {
+    type: 'add-player',
+    leagueId: snapshot.league.id,
+    teamId: managedTeamId,
+    playerId: playerId('player-1'),
+  };
+
+  it.each([
+    {
+      proposal: { rationale: ' ', proposedActions: [] },
+      code: 'INVALID_RATIONALE',
+    },
+    {
+      proposal: {
+        rationale: 'Wrong team',
+        proposedActions: [{ ...validAction, teamId: teamId('other') }],
+      },
+      code: 'ACTION_TEAM_MISMATCH',
+    },
+    {
+      proposal: {
+        rationale: 'Wrong period',
+        proposedActions: [
+          {
+            type: 'set-lineup',
+            leagueId: snapshot.league.id,
+            teamId: managedTeamId,
+            scoringPeriod: '4',
+            assignments: [],
+          },
+        ],
+      },
+      code: 'ACTION_PERIOD_MISMATCH',
+    },
+    {
+      proposal: {
+        rationale: 'Malformed action',
+        proposedActions: [{ type: 'invented-action' }],
+      },
+      code: 'MALFORMED_ACTION',
+    },
+  ])('rejects invalid output with $code', ({ proposal, code }) => {
+    expectDecisionError(
+      () => validateDecisionProposal(proposal, context),
+      code,
+    );
+  });
+});
+
+function expectDecisionError(operation: () => unknown, code: string): void {
+  try {
+    operation();
+    throw new Error('Expected decision validation to fail');
+  } catch (error) {
+    expect(error).toBeInstanceOf(DecisionValidationError);
+    if (!(error instanceof DecisionValidationError)) return;
+    expect(error.code).toBe(code);
+  }
+}
+
+async function expectDecisionErrorAsync(
+  operation: () => Promise<unknown>,
+  code: string,
+): Promise<void> {
+  try {
+    await operation();
+    throw new Error('Expected decision validation to fail');
+  } catch (error) {
+    expect(error).toBeInstanceOf(DecisionValidationError);
+    if (!(error instanceof DecisionValidationError)) return;
+    expect(error.code).toBe(code);
+  }
+}

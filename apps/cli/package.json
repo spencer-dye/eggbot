@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@eggbot/agent": "workspace:*",
+    "@eggbot/agent-local": "workspace:*",
     "@eggbot/analytics": "workspace:*",
     "@eggbot/core": "workspace:*",
     "@eggbot/platform": "workspace:*",

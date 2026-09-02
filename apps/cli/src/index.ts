@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 import { sumProjectedStartingLineupPoints } from '@eggbot/analytics';
+import { createNoActionDecisionEngine } from '@eggbot/agent-local';
 import {
   actionId,
   leagueId,
@@ -41,6 +42,11 @@ const defaultTokenFile = resolve(
 
 async function main(args: readonly string[]): Promise<void> {
   if (args.length === 0 || args[0] === 'smoke') {
+    const decisionEngine = createNoActionDecisionEngine({
+      id: 'eggbot-safe-default',
+      version: '1.0.0',
+      rationale: 'No autonomous decision strategy is configured.',
+    });
     printJson({
       analyticsResult: sumProjectedStartingLineupPoints(
         emptyLineup,
@@ -54,8 +60,14 @@ async function main(args: readonly string[]): Promise<void> {
         'available-pool-scarcity',
         'roster-risk',
       ],
+      decisionEngine: {
+        id: decisionEngine.id,
+        version: decisionEngine.version,
+        kind: decisionEngine.kind,
+        behavior: 'no-action',
+      },
       platformBoundary: yahooAdapterMetadata,
-      phase: 4,
+      phase: 5,
       writeOperations: 'guarded',
     });
     return;

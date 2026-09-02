@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 4 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 5 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -24,7 +24,7 @@ Implemented provenance-bound, deterministic lineup projections, coverage-qualifi
 
 ## Phase 5 — Decision engines
 
-Stabilize the provider-neutral decision interface and add the first concrete integrations in separate provider packages.
+Implemented a provider-neutral proposal and audited-run boundary with context/output validation, host-owned decision identity and timing, and separate safe local implementations. Live model-provider integrations remain deliberately unselected.
 
 ## Phase 6 — Policy engine
 

@@ -38,6 +38,9 @@ importers:
       '@eggbot/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@eggbot/agent-local':
+        specifier: workspace:*
+        version: link:../../packages/agent-local
       '@eggbot/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics
@@ -71,6 +74,12 @@ importers:
       '@eggbot/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/agent-local:
+    dependencies:
+      '@eggbot/agent':
+        specifier: workspace:*
+        version: link:../agent
 
   packages/analytics:
     dependencies:
