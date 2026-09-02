@@ -28,7 +28,7 @@ Implemented a provider-neutral proposal and audited-run boundary with context/ou
 
 ## Phase 6 — Policy engine
 
-Implemented snapshot-bound validation, mandatory legality rules, configurable guardrails, structured rejection reasons, cross-action conflict detection, custom-rule composition, and explicit provenance-bearing execution approval.
+Implemented snapshot-bound validation, mandatory legality rules, approved-batch roster-capacity validation, configurable guardrails, structured rejection reasons, cross-action conflict detection, custom-rule composition, runtime-frozen audit configuration, and explicit provenance-bearing execution approval. Phase 7 must configure snapshot freshness before autonomous execution.
 
 ## Phase 7 — Autonomous lineup management
 

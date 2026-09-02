@@ -249,6 +249,155 @@ describe('createPolicyEngine', () => {
     );
   });
 
+  it('rejects standalone acquisitions that collectively exceed roster capacity', async () => {
+    const snapshot = snapshotFixture();
+    const openRosterSnapshot: LeagueSnapshot = {
+      ...snapshot,
+      teams: [
+        {
+          ...snapshot.teams[0]!,
+          roster: {
+            teamId: managedTeamId,
+            entries: snapshot.teams[0]!.roster.entries.slice(0, 2),
+          },
+          lineup: {
+            ...snapshot.teams[0]!.lineup,
+            assignments: snapshot.teams[0]!.lineup.assignments.slice(0, 2),
+          },
+        },
+      ],
+    };
+    const first: FantasyAction = {
+      id: actionId('first-add'),
+      type: 'add-player',
+      leagueId: league,
+      teamId: managedTeamId,
+      playerId: freeRb.id,
+    };
+    const second: FantasyAction = {
+      id: actionId('second-add'),
+      type: 'add-player',
+      leagueId: league,
+      teamId: managedTeamId,
+      playerId: freeWr.id,
+    };
+
+    const evaluation = await createPolicyEngine().evaluate(
+      decisionRun([first, second], openRosterSnapshot),
+      context(),
+    );
+
+    expect(issueCodes(evaluation.results[0])).toContain(
+      'BATCH_ROSTER_CAPACITY_EXCEEDED',
+    );
+    expect(issueCodes(evaluation.results[1])).toContain(
+      'BATCH_ROSTER_CAPACITY_EXCEEDED',
+    );
+    expect(getApprovedActions(evaluation)).toEqual([]);
+  });
+
+  it('does not let an invalid drop create batch capacity', async () => {
+    const snapshot = snapshotFixture();
+    const openRosterSnapshot: LeagueSnapshot = {
+      ...snapshot,
+      teams: [
+        {
+          ...snapshot.teams[0]!,
+          roster: {
+            teamId: managedTeamId,
+            entries: snapshot.teams[0]!.roster.entries.slice(0, 2),
+          },
+          lineup: {
+            ...snapshot.teams[0]!.lineup,
+            assignments: snapshot.teams[0]!.lineup.assignments.slice(0, 2),
+          },
+        },
+      ],
+    };
+    const actions: readonly FantasyAction[] = [
+      {
+        id: actionId('first-add'),
+        type: 'add-player',
+        leagueId: league,
+        teamId: managedTeamId,
+        playerId: freeRb.id,
+      },
+      {
+        id: actionId('second-add'),
+        type: 'add-player',
+        leagueId: league,
+        teamId: managedTeamId,
+        playerId: freeWr.id,
+      },
+      {
+        id: actionId('invalid-drop'),
+        type: 'drop-player',
+        leagueId: league,
+        teamId: managedTeamId,
+        playerId: playerId('not-rostered'),
+      },
+    ];
+
+    const evaluation = await createPolicyEngine().evaluate(
+      decisionRun(actions, openRosterSnapshot),
+      context(),
+    );
+
+    expect(issueCodes(evaluation.results[0])).toContain(
+      'BATCH_ROSTER_CAPACITY_EXCEEDED',
+    );
+    expect(issueCodes(evaluation.results[1])).toContain(
+      'BATCH_ROSTER_CAPACITY_EXCEEDED',
+    );
+    expect(issueCodes(evaluation.results[2])).toContain(
+      'DROP_PLAYER_NOT_ROSTERED',
+    );
+  });
+
+  it('keeps standalone additions snapshot-relative even when paired with a drop', async () => {
+    const add: FantasyAction = {
+      id: actionId('standalone-add'),
+      type: 'add-player',
+      leagueId: league,
+      teamId: managedTeamId,
+      playerId: freeWr.id,
+    };
+    const drop: FantasyAction = {
+      id: actionId('standalone-drop'),
+      type: 'drop-player',
+      leagueId: league,
+      teamId: managedTeamId,
+      playerId: qbBench.id,
+    };
+
+    const evaluation = await createPolicyEngine().evaluate(
+      decisionRun([drop, add]),
+      context(),
+    );
+
+    expect(evaluation.results[0]?.status).toBe('approved');
+    expect(issueCodes(evaluation.results[1])).toContain(
+      'ROSTER_CAPACITY_EXCEEDED',
+    );
+  });
+
+  it('freezes the policy descriptor and copied configuration', async () => {
+    const protectedPlayerIds = [qbBench.id];
+    const engine = createPolicyEngine({
+      guardrails: { protectedPlayerIds },
+    });
+    protectedPlayerIds.push(rbStarter.id);
+
+    const evaluation = await engine.evaluate(decisionRun([]), context());
+
+    expect(Object.isFrozen(engine)).toBe(true);
+    expect(Object.isFrozen(engine.guardrails)).toBe(true);
+    expect(Object.isFrozen(engine.guardrails.protectedPlayerIds)).toBe(true);
+    expect(Object.isFrozen(engine.ruleIds)).toBe(true);
+    expect(Object.isFrozen(evaluation.policy)).toBe(true);
+    expect(engine.guardrails.protectedPlayerIds).toEqual([qbBench.id]);
+  });
+
   it('rejects cross-action player conflicts symmetrically', async () => {
     const add: FantasyAction = {
       id: actionId('add'),
@@ -385,8 +534,10 @@ function context(): PolicyContext {
   };
 }
 
-function decisionRun(actions: readonly FantasyAction[]): DecisionRun {
-  const snapshot = snapshotFixture();
+function decisionRun(
+  actions: readonly FantasyAction[],
+  snapshot: LeagueSnapshot = snapshotFixture(),
+): DecisionRun {
   const analytics = analyticsFixture(snapshot);
   return {
     engine: { id: 'test-engine', version: '1.0.0', kind: 'deterministic' },

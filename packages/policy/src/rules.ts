@@ -159,6 +159,37 @@ export function evaluateGlobalGuardrails(
   return issues;
 }
 
+export function evaluateBatchRosterCapacity(
+  actions: readonly FantasyAction[],
+  state: BuiltInPolicyState,
+): ReadonlyMap<FantasyAction, readonly PolicyIssueDraft[]> {
+  const issues = actionIssueMap(actions);
+  const rosterMutations = actions.filter(
+    (action): action is Exclude<FantasyAction, { type: 'set-lineup' }> =>
+      action.type !== 'set-lineup',
+  );
+  const resultingRosterSize = rosterMutations.reduce(
+    (size, action) => size + rosterSizeDelta(action),
+    state.team.roster.entries.length,
+  );
+  if (resultingRosterSize <= state.slots.size) return issues;
+
+  const standaloneAcquisitions = rosterMutations.filter(
+    (action) => rosterSizeDelta(action) > 0,
+  );
+  addToActions(
+    issues,
+    standaloneAcquisitions,
+    issue(
+      'eggbot.roster',
+      'BATCH_ROSTER_CAPACITY_EXCEEDED',
+      `Approved action set would produce ${resultingRosterSize} rostered players; capacity is ${state.slots.size}`,
+      { kind: 'decision', id: 'resulting-roster-size' },
+    ),
+  );
+  return issues;
+}
+
 export function detectActionConflicts(
   actions: readonly FantasyAction[],
 ): ReadonlyMap<FantasyAction, readonly PolicyIssueDraft[]> {
@@ -616,6 +647,17 @@ function droppedPlayerId(
   if (action.type === 'drop-player') return action.playerId;
   if (action.type === 'add-player') return undefined;
   return action.dropPlayerId;
+}
+
+function rosterSizeDelta(
+  action: Exclude<FantasyAction, { type: 'set-lineup' }>,
+): -1 | 0 | 1 {
+  if (action.type === 'add-player') return 1;
+  if (action.type === 'drop-player') return -1;
+  if (action.type === 'waiver-claim' && action.dropPlayerId === undefined) {
+    return 1;
+  }
+  return 0;
 }
 
 function actionFingerprint(action: FantasyAction): string {

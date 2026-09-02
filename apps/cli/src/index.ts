@@ -73,6 +73,7 @@ async function main(args: readonly string[]): Promise<void> {
         'structured-rejections',
         'configurable-guardrails',
         'conflict-detection',
+        'batch-roster-capacity',
         'execution-approval',
       ],
       policyEngine: {

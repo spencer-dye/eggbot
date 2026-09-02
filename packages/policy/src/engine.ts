@@ -4,6 +4,7 @@ import type { FantasyAction } from '@eggbot/core';
 import {
   createBuiltInPolicyState,
   detectActionConflicts,
+  evaluateBatchRosterCapacity,
   evaluateBuiltInAction,
   evaluateGlobalGuardrails,
   type PolicyIssueDraft,
@@ -25,18 +26,18 @@ import {
 export function createPolicyEngine(
   options: PolicyEngineOptions = {},
 ): PolicyEngine {
-  const guardrails = copyGuardrails(options.guardrails ?? {});
-  const rules = [...(options.rules ?? [])];
-  const descriptor = {
+  const guardrails = freezeGuardrails(options.guardrails ?? {});
+  const rules = Object.freeze([...(options.rules ?? [])]);
+  const descriptor = Object.freeze({
     id: options.id ?? 'eggbot-policy',
     version: options.version ?? '1.0.0',
     guardrails,
-    ruleIds: rules.map(({ id }) => id),
-  };
+    ruleIds: Object.freeze(rules.map(({ id }) => id)),
+  });
   validateConfiguration(descriptor, rules);
-  return {
+  const engine: PolicyEngine = {
     ...descriptor,
-    evaluate(run, context) {
+    evaluate(run: DecisionRun, context: PolicyContext) {
       validateEvaluationContext(run, context);
       const actions = run.decision.proposedActions;
       const state = createBuiltInPolicyState(context, run, guardrails);
@@ -47,14 +48,26 @@ export function createPolicyEngine(
         context,
         guardrails,
       );
+      const draftsByAction = new Map(
+        actions.map((action) => [
+          action,
+          [
+            ...evaluateBuiltInAction(action, state, guardrails),
+            ...(conflicts.get(action) ?? []),
+            ...(globalGuardrails.get(action) ?? []),
+            ...evaluateCustomRules(rules, action, context, run),
+          ],
+        ]),
+      );
+      const batchCandidates = actions.filter(
+        (action) => (draftsByAction.get(action)?.length ?? 0) === 0,
+      );
+      const batchCapacity = evaluateBatchRosterCapacity(batchCandidates, state);
       const results = actions.map((action): ActionPolicyEvaluation => {
-        const drafts = [
-          ...evaluateBuiltInAction(action, state, guardrails),
-          ...(conflicts.get(action) ?? []),
-          ...(globalGuardrails.get(action) ?? []),
-          ...evaluateCustomRules(rules, action, context, run),
-        ];
-        const issues = deduplicateIssues(drafts).map((draft): PolicyIssue => ({
+        const issues = deduplicateIssues([
+          ...(draftsByAction.get(action) ?? []),
+          ...(batchCapacity.get(action) ?? []),
+        ]).map((draft): PolicyIssue => ({
           ...draft,
           actionId: action.id,
         }));
@@ -72,6 +85,7 @@ export function createPolicyEngine(
       });
     },
   };
+  return Object.freeze(engine);
 }
 
 export function getApprovedActions(
@@ -183,11 +197,13 @@ function validateConfiguration(
   }
 }
 
-function copyGuardrails(guardrails: PolicyGuardrails): PolicyGuardrails {
-  return {
+function freezeGuardrails(guardrails: PolicyGuardrails): PolicyGuardrails {
+  return Object.freeze({
     ...(guardrails.protectedPlayerIds === undefined
       ? {}
-      : { protectedPlayerIds: [...guardrails.protectedPlayerIds] }),
+      : {
+          protectedPlayerIds: Object.freeze([...guardrails.protectedPlayerIds]),
+        }),
     ...(guardrails.maxActionsPerDecision === undefined
       ? {}
       : { maxActionsPerDecision: guardrails.maxActionsPerDecision }),
@@ -200,7 +216,7 @@ function copyGuardrails(guardrails: PolicyGuardrails): PolicyGuardrails {
     ...(guardrails.maxSnapshotAgeMs === undefined
       ? {}
       : { maxSnapshotAgeMs: guardrails.maxSnapshotAgeMs }),
-  };
+  });
 }
 
 function validateEvaluationContext(
