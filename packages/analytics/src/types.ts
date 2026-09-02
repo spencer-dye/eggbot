@@ -123,6 +123,8 @@ export interface LeagueAnalytics {
   readonly sourceSnapshotId: SnapshotId;
   readonly scoringPeriod: string;
   readonly projectionProvenance: ProjectionProvenance;
+  /** Exact normalized inputs retained so decisions are reproducible. */
+  readonly playerProjections: readonly PlayerProjection[];
   readonly lineupProjections: readonly LineupProjection[];
   readonly matchupProjections: readonly MatchupProjection[];
   readonly bestAvailablePlayers: readonly BestAvailablePlayerAtPosition[];

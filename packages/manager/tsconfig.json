@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "references": [
+    { "path": "../core" },
+    { "path": "../platform" },
+    { "path": "../snapshot" },
+    { "path": "../analytics" },
+    { "path": "../agent" },
+    { "path": "../policy" }
+  ],
+  "include": ["src/**/*.ts"]
+}

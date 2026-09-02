@@ -94,6 +94,14 @@ export function analyzeLeagueSnapshot(
         ? {}
         : { version: projectionSet.version }),
     },
+    playerProjections: projectionSet.players.map((projection) => ({
+      playerId: projection.playerId,
+      points: projection.points,
+      ...(projection.floor === undefined ? {} : { floor: projection.floor }),
+      ...(projection.ceiling === undefined
+        ? {}
+        : { ceiling: projection.ceiling }),
+    })),
     lineupProjections,
     matchupProjections,
     bestAvailablePlayers,

@@ -1,7 +1,15 @@
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { sumProjectedStartingLineupPoints } from '@eggbot/analytics';
-import { createNoActionDecisionEngine } from '@eggbot/agent-local';
+import {
+  sumProjectedStartingLineupPoints,
+  type ProjectionSet,
+} from '@eggbot/analytics';
+import {
+  createNoActionDecisionEngine,
+  createProjectedLineupDecisionEngine,
+} from '@eggbot/agent-local';
+import { AutonomousLineupManager } from '@eggbot/manager';
 import { createPolicyEngine } from '@eggbot/policy';
 import {
   actionId,
@@ -83,7 +91,13 @@ async function main(args: readonly string[]): Promise<void> {
         ruleIds: policyEngine.ruleIds,
       },
       platformBoundary: yahooAdapterMetadata,
-      phase: 6,
+      managerCapabilities: [
+        'autonomous-lineup-dry-run',
+        'autonomous-lineup-execution',
+        'freshness-enforcement',
+        'complete-audit-record',
+      ],
+      phase: 7,
       writeOperations: 'guarded',
     });
     return;
@@ -109,6 +123,13 @@ async function main(args: readonly string[]): Promise<void> {
     if (process.env.YAHOO_ENABLE_WRITES !== '1') {
       throw new Error('--execute also requires YAHOO_ENABLE_WRITES=1');
     }
+  }
+  if (
+    command === 'manage-lineup' &&
+    shouldExecute &&
+    process.env.YAHOO_ENABLE_WRITES !== '1'
+  ) {
+    throw new Error('--execute also requires YAHOO_ENABLE_WRITES=1');
   }
   const config = yahooConfigFromEnvironment();
   const initialTokens = tokensFromEnvironment();
@@ -241,6 +262,62 @@ async function main(args: readonly string[]): Promise<void> {
         await snapshotService.capture({
           leagueId: asLeagueId(requireArgument(commandArgs, 0, 'league key')),
           scoringPeriod: requireArgument(commandArgs, 1, 'scoring period'),
+          freeAgentLimit:
+            readNumberOption(commandArgs, '--free-agent-limit') ?? 50,
+          waiverLimit: readNumberOption(commandArgs, '--waiver-limit') ?? 50,
+          transactionLimit:
+            readNumberOption(commandArgs, '--transaction-limit') ?? 25,
+          teamReadConcurrency:
+            readNumberOption(commandArgs, '--team-concurrency') ?? 4,
+        }),
+      );
+      break;
+    }
+    case 'manage-lineup': {
+      const leagueId = asLeagueId(
+        requireArgument(commandArgs, 0, 'league key'),
+      );
+      const managedTeamId = asTeamId(
+        requireArgument(commandArgs, 1, 'team key'),
+      );
+      const scoringPeriod = requireArgument(commandArgs, 2, 'week');
+      const projectionSet = await readProjectionFile(
+        requireOption(commandArgs, '--projections'),
+      );
+      const maxSnapshotAgeMs =
+        readNumberOption(commandArgs, '--max-snapshot-age-ms') ??
+        5 * 60 * 1_000;
+      const manager = new AutonomousLineupManager({
+        snapshotService: new LeagueSnapshotService({ reader }),
+        projectionProvider: {
+          getProjections: () => Promise.resolve(projectionSet),
+        },
+        decisionEngine: createProjectedLineupDecisionEngine({
+          minimumProjectedPointGain:
+            readNonNegativeFiniteOption(commandArgs, '--minimum-gain') ?? 0.1,
+        }),
+        policyEngine: createPolicyEngine({
+          guardrails: {
+            maxSnapshotAgeMs,
+            maxActionsPerDecision: 1,
+            maxRosterMutationActions: 0,
+          },
+        }),
+        executor: new YahooFantasyExecutor({
+          httpClient,
+          reader,
+          allowWrites: shouldExecute,
+        }),
+        maxProjectionAgeMs:
+          readNumberOption(commandArgs, '--max-projection-age-ms') ??
+          30 * 60 * 1_000,
+      });
+      printJson(
+        await manager.run({
+          leagueId,
+          managedTeamId,
+          scoringPeriod,
+          executionMode: shouldExecute ? 'execute' : 'dry-run',
           freeAgentLimit:
             readNumberOption(commandArgs, '--free-agent-limit') ?? 50,
           waiverLimit: readNumberOption(commandArgs, '--waiver-limit') ?? 50,
@@ -469,6 +546,67 @@ function readNonNegativeNumberOption(
   return number;
 }
 
+function readNonNegativeFiniteOption(
+  args: readonly string[],
+  name: string,
+): number | undefined {
+  const value = readOption(args, name);
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new Error(`${name} must be a finite non-negative number`);
+  }
+  return number;
+}
+
+function requireOption(args: readonly string[], name: string): string {
+  const value = readOption(args, name);
+  if (value === undefined) throw new Error(`${name} is required`);
+  return value;
+}
+
+async function readProjectionFile(path: string): Promise<ProjectionSet> {
+  const value: unknown = JSON.parse(await readFile(resolve(path), 'utf8'));
+  if (!isRecord(value) || !Array.isArray(value.players)) {
+    throw new Error('Projection file must contain a projection-set object');
+  }
+  if (
+    typeof value.scoringPeriod !== 'string' ||
+    typeof value.observedAt !== 'string' ||
+    typeof value.source !== 'string' ||
+    (value.version !== undefined && typeof value.version !== 'string')
+  ) {
+    throw new Error('Projection file provenance is malformed');
+  }
+  return {
+    scoringPeriod: value.scoringPeriod,
+    observedAt: value.observedAt,
+    source: value.source,
+    ...(value.version === undefined ? {} : { version: value.version }),
+    players: value.players.map((item, index) => {
+      if (
+        !isRecord(item) ||
+        typeof item.playerId !== 'string' ||
+        typeof item.points !== 'number' ||
+        (item.floor !== undefined && typeof item.floor !== 'number') ||
+        (item.ceiling !== undefined && typeof item.ceiling !== 'number')
+      ) {
+        throw new Error(`Projection file player ${index} is malformed`);
+      }
+      return {
+        playerId: asPlayerId(item.playerId),
+        points: item.points,
+        ...(item.floor === undefined ? {} : { floor: item.floor }),
+        ...(item.ceiling === undefined ? {} : { ceiling: item.ceiling }),
+      };
+    }),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function readAvailability(
   args: readonly string[],
 ): 'available' | 'free-agent' | 'waivers' | undefined {
@@ -534,6 +672,10 @@ function printHelp(): void {
   pnpm cli yahoo snapshot <league-key> <scoring-period>
       [--free-agent-limit count] [--waiver-limit count]
       [--transaction-limit count] [--team-concurrency count]
+  pnpm cli yahoo manage-lineup <league-key> <team-key> <week>
+      --projections path [--minimum-gain points]
+      [--max-snapshot-age-ms milliseconds]
+      [--max-projection-age-ms milliseconds] [--execute]
   pnpm cli yahoo lineup-change <league-key> <team-key> <week>
       <player-key=Yahoo-position,...> [--action-id id] [--execute]
   pnpm cli yahoo add <league-key> <team-key> <player-key>
@@ -545,8 +687,9 @@ function printHelp(): void {
   pnpm cli yahoo waiver <league-key> <team-key> <add-player-key>
       [drop-player-key] [--bid amount] [--action-id id] [--execute]
 
-Write commands print an exact XML preview by default. Live writes require both
---execute and --action-id, plus YAHOO_ENABLE_WRITES=1.
+Direct write commands print an XML preview by default. Direct live writes require
+--execute, --action-id, and YAHOO_ENABLE_WRITES=1. Autonomous lineup execution
+uses a host-owned action ID and requires --execute plus YAHOO_ENABLE_WRITES=1.
 
 Environment:
   YAHOO_CLIENT_ID              required for Yahoo commands

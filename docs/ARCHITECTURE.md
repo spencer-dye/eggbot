@@ -2,29 +2,31 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 6 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision-engine execution, and deterministic policy approval without choosing a league format, model provider, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 7 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, and autonomous lineup orchestration without choosing a league format, model provider, database, scheduler, or deployment environment.
 
 ## Workspace layout
 
-| Workspace             | Responsibility                                             | Direct workspace dependencies |
-| --------------------- | ---------------------------------------------------------- | ----------------------------- |
-| `@eggbot/core`        | Stable domain vocabulary, opaque IDs, actions, and results | None                          |
-| `@eggbot/platform`    | Provider-neutral read and execution ports                  | `core`                        |
-| `@eggbot/yahoo`       | Yahoo OAuth, read transport, validation, and mapping       | `core`, `platform`            |
-| `@eggbot/snapshot`    | Normalized multi-read league snapshot capture              | `core`, `platform`            |
-| `@eggbot/agent`       | Provider-neutral decision-engine port                      | `core`, `analytics`           |
-| `@eggbot/agent-local` | Safe local decision-engine implementations                 | `agent`                       |
-| `@eggbot/policy`      | Deterministic approval/rejection boundary                  | `core`, `agent`               |
-| `@eggbot/analytics`   | Deterministic calculations and analytics port              | `core`                        |
-| `@eggbot/storage`     | Persistence port, with no implementation                   | None                          |
-| `@eggbot/scheduler`   | Scheduling port, with no implementation                    | None                          |
-| `@eggbot/cli`         | Application composition proof                              | Public APIs of all packages   |
+| Workspace             | Responsibility                                             | Direct workspace dependencies                                  |
+| --------------------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
+| `@eggbot/core`        | Stable domain vocabulary, opaque IDs, actions, and results | None                                                           |
+| `@eggbot/platform`    | Provider-neutral read and execution ports                  | `core`                                                         |
+| `@eggbot/yahoo`       | Yahoo OAuth, read transport, validation, and mapping       | `core`, `platform`                                             |
+| `@eggbot/snapshot`    | Normalized multi-read league snapshot capture              | `core`, `platform`                                             |
+| `@eggbot/agent`       | Provider-neutral decision-engine port                      | `core`, `analytics`                                            |
+| `@eggbot/agent-local` | Safe local decision-engine implementations                 | `core`, `agent`                                                |
+| `@eggbot/policy`      | Deterministic approval/rejection boundary                  | `core`, `agent`                                                |
+| `@eggbot/manager`     | Guarded autonomous application workflows                   | `core`, `platform`, `snapshot`, `analytics`, `agent`, `policy` |
+| `@eggbot/analytics`   | Deterministic calculations and analytics port              | `core`                                                         |
+| `@eggbot/storage`     | Persistence port, with no implementation                   | None                                                           |
+| `@eggbot/scheduler`   | Scheduling port, with no implementation                    | None                                                           |
+| `@eggbot/cli`         | Application composition proof                              | Public APIs of all packages                                    |
 
 Packages expose a single explicit root entry point. Deep imports are not part of the public API. TypeScript project references and pnpm workspace links enforce an acyclic build graph.
 
 ```mermaid
 flowchart TD
   CLI[Application composition] --> A[agent]
+  CLI --> M[manager]
   CLI --> P[policy]
   CLI --> N[analytics]
   CLI --> FP[platform ports]
@@ -32,6 +34,11 @@ flowchart TD
   CLI --> J[scheduler port]
   Y[Yahoo adapter] --> FP
   AL[local agent implementations] --> A
+  M --> LS
+  M --> N
+  M --> A
+  M --> P
+  M --> FP
   LS[snapshot capture] --> FP
   LS --> C
   A --> N
@@ -41,6 +48,14 @@ flowchart TD
   N --> C
   FP --> C
 ```
+
+## Phase 7 public API changes
+
+Phase 7 needs to compare every managed roster player when constructing a lineup, but the Phase 4 `LeagueAnalytics` contract retained only projection provenance and aggregates for the current lineup. A decision engine could not inspect bench alternatives, and a `DecisionRun` did not contain enough input data to reproduce an autonomous lineup choice. Phase 7 therefore additively retains a normalized copy of the exact `playerProjections` on `LeagueAnalytics`. Projection acquisition remains caller-supplied; no external football-data provider is selected.
+
+`@eggbot/manager` is the reusable application-service boundary for the end-to-end lineup workflow. It composes snapshot capture, deterministic analytics, a decision engine, policy, and a platform executor without giving write authority to analytics or the agent. Its Phase 7 surface accepts only one lineup action, requires explicit dry-run or execute mode plus positive snapshot and projection age limits, rechecks snapshot freshness immediately before execution, validates custom policy/executor outputs against their inputs, and allows only one in-process run per manager instance. A completed run returns the exact snapshot, analytics, decision run, policy evaluation and approval, execution results, timestamps, and terminal status. Persistence, distributed locking, retries, reconciliation, and production scheduling remain Phase 11 concerns.
+
+The first autonomous strategy remains in `@eggbot/agent-local`: a deterministic projection-based lineup engine. It requires complete projection coverage for every movable active/bench player by default, abstains on managed-roster integrity warnings, preserves reserve assignments, computes a maximum-projection legal active lineup, and proposes at most one `set-lineup` action only when the configured minimum gain is exceeded. It never proposes acquisitions, waivers, trades, or direct writes.
 
 ## Phase 6 public API changes
 

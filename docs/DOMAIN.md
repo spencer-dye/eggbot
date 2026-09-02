@@ -20,6 +20,7 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **DecisionRun** associates a validated `FantasyDecision` with its engine identity/version, exact source snapshot and analytics, managed team, and execution window.
 - **PolicyEvaluation** records every deterministic approval or rejection for a decision run, with structured rule attribution and conflict context.
 - **PolicyApproval** is the explicitly derived, provenance-bearing subset of actions policy approved for possible execution. It is not proof that a platform will accept them.
+- **LineupManagementRun** is the complete Phase 7 workflow record. It associates one snapshot and exact projection-backed analytics with its decision, policy evaluation, optional approval, execution mode and results, timestamps, scope findings, and terminal status.
 - **ActionResult** records a local dry run, a durably recorded execution, an uncertain execution outcome, or a failed attempt with a code, message, and retryability signal.
 - **LeagueSnapshot** is a normalized, timestamped observation window containing league-wide state for one scoring period. It groups team rosters and lineups, standings, matchups, acquisition pools, and recent transactions without claiming provider-level atomic consistency.
 
@@ -57,7 +58,7 @@ Platform payloads, enum values, and identifiers are external data. An adapter va
 
 Platform state is observed source data. Analytics are deterministic values derived from that data. Keeping them separate makes snapshots reproducible and calculations independently testable.
 
-`LeagueAnalytics` identifies its source snapshot and retains projection provenance: scoring period, observation time, source, and optional source version. A `ProjectionSet` for a different scoring period is rejected. Player projections are caller-supplied observed inputs, while lineup totals, coverage-qualified matchup margins, best-available comparisons, acquisition-pool scarcity summaries, and roster-risk facts are deterministic derivations. Missing projection coverage remains explicit rather than silently becoming a confident zero estimate.
+`LeagueAnalytics` identifies its source snapshot and retains both exact normalized player projections and their provenance: scoring period, observation time, source, and optional source version. A `ProjectionSet` for a different scoring period is rejected. Player projections are caller-supplied observed inputs, while lineup totals, coverage-qualified matchup margins, best-available comparisons, acquisition-pool scarcity summaries, and roster-risk facts are deterministic derivations. Missing projection coverage remains explicit rather than silently becoming a confident zero estimate.
 
 ### Snapshot coverage and consistency
 

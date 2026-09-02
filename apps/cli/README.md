@@ -1,6 +1,6 @@
 # `@eggbot/cli`
 
-The default `pnpm cli` command is a credential-free composition smoke test. It reports the safe local no-action decision engine and Phase 6 policy capabilities without invoking any platform or model provider. Phase 1 also provides manual Yahoo read commands:
+The default `pnpm cli` command is a credential-free composition smoke test. It reports the safe local decision, policy, and Phase 7 manager capabilities without invoking any platform or model provider. Phase 1 also provides manual Yahoo read commands:
 
 ```sh
 pnpm cli yahoo help
@@ -19,6 +19,15 @@ pnpm cli yahoo transactions 449.l.1234 --limit 10
 pnpm cli yahoo snapshot 449.l.1234 3 --free-agent-limit 50 --waiver-limit 50
 ```
 
+Phase 7 can run the complete autonomous lineup workflow from a caller-supplied projection JSON file. It defaults to Yahoo's non-mutating local dry run and requires complete projection coverage for movable roster players:
+
+```sh
+pnpm cli yahoo manage-lineup 449.l.1234 449.l.1234.t.1 3 \
+  --projections ./projections-week-3.json --minimum-gain 0.5
+```
+
+The projection file contains `scoringPeriod`, `observedAt`, `source`, optional `version`, and a `players` array of `{ playerId, points, floor?, ceiling? }`. Snapshot age defaults to five minutes and projection age to thirty minutes; both are configurable with explicit millisecond options. Add `--execute` only after reviewing dry-run output.
+
 Yahoo commands read `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, and optionally `YAHOO_REDIRECT_URI` (default `oob`). Initial tokens can be supplied through `YAHOO_ACCESS_TOKEN`, `YAHOO_REFRESH_TOKEN`, and `YAHOO_TOKEN_EXPIRES_AT` as epoch milliseconds or an ISO timestamp.
 
 Newly exchanged and refreshed tokens are saved to `.eggbot/yahoo-tokens.json` with owner-only permissions. Override the location with `YAHOO_TOKEN_FILE`. Normal output redacts access and refresh tokens; `yahoo exchange` reveals them only with the explicit `--show-secrets` flag.
@@ -33,4 +42,4 @@ pnpm cli yahoo add-drop 449.l.1234 449.l.1234.t.1 449.p.10 449.p.20
 pnpm cli yahoo waiver 449.l.1234 449.l.1234.t.1 449.p.10 449.p.20 --bid 7
 ```
 
-A live mutation requires all three independent signals: `--execute`, a stable `--action-id`, and `YAHOO_ENABLE_WRITES=1`. Yahoo currently does not grant write access to new applications, so execution also requires credentials Yahoo has already authorized for writes. The CLI's journal is process-local; use an injected durable journal for production transaction retries.
+A direct live mutation requires all three independent signals: `--execute`, a stable `--action-id`, and `YAHOO_ENABLE_WRITES=1`. Autonomous lineup execution requires `--execute` and `YAHOO_ENABLE_WRITES=1`; the manager creates a host-owned action ID and independently enforces policy and freshness. Yahoo currently does not grant write access to new applications, so execution also requires credentials Yahoo has already authorized for writes. The CLI's journal is process-local; use an injected durable journal for production transaction retries.

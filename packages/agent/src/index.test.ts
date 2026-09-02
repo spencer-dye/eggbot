@@ -74,6 +74,7 @@ const analytics: LeagueAnalytics = {
     observedAt: '2026-09-01T11:45:00.000Z',
     source: 'test-projections',
   },
+  playerProjections: [],
   lineupProjections: [
     {
       teamId: managedTeamId,

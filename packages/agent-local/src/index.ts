@@ -44,3 +44,8 @@ export function createNoActionDecisionEngine(
     }),
   });
 }
+
+export {
+  createProjectedLineupDecisionEngine,
+  type ProjectedLineupDecisionEngineOptions,
+} from './projected-lineup.js';

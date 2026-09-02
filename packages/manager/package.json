@@ -1,5 +1,5 @@
 {
-  "name": "@eggbot/agent-local",
+  "name": "@eggbot/manager",
   "version": "0.0.0",
   "private": false,
   "type": "module",
@@ -21,6 +21,10 @@
   },
   "dependencies": {
     "@eggbot/agent": "workspace:*",
-    "@eggbot/core": "workspace:*"
+    "@eggbot/analytics": "workspace:*",
+    "@eggbot/core": "workspace:*",
+    "@eggbot/platform": "workspace:*",
+    "@eggbot/policy": "workspace:*",
+    "@eggbot/snapshot": "workspace:*"
   }
 }

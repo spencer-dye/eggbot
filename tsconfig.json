@@ -7,6 +7,7 @@
     { "path": "packages/yahoo" },
     { "path": "packages/agent" },
     { "path": "packages/policy" },
+    { "path": "packages/manager" },
     { "path": "packages/analytics" },
     { "path": "packages/storage" },
     { "path": "packages/scheduler" },

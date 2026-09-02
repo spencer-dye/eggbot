@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 6 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 7 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -32,7 +32,7 @@ Implemented snapshot-bound validation, mandatory legality rules, approved-batch 
 
 ## Phase 7 — Autonomous lineup management
 
-Deliver end-to-end, low-risk autonomous lineup management with full auditability.
+Implemented deterministic maximum-projection lineup selection with complete-coverage and integrity-warning abstention, reserve preservation, minimum-gain control, exact projection retention, and a provider-neutral one-shot manager. The workflow composes snapshot capture through guarded execution, enforces snapshot/projection freshness and lineup-only scope, validates policy/executor contracts, prevents overlapping local runs, and returns a complete audit record. Production scheduling, persistence, and distributed coordination remain deferred.
 
 ## Phase 8 — Waiver management
 

@@ -47,6 +47,9 @@ importers:
       '@eggbot/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@eggbot/manager':
+        specifier: workspace:*
+        version: link:../../packages/manager
       '@eggbot/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -80,6 +83,9 @@ importers:
       '@eggbot/agent':
         specifier: workspace:*
         version: link:../agent
+      '@eggbot/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/analytics:
     dependencies:
@@ -92,6 +98,27 @@ importers:
       zod:
         specifier: ^4.1.5
         version: 4.5.4
+
+  packages/manager:
+    dependencies:
+      '@eggbot/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@eggbot/analytics':
+        specifier: workspace:*
+        version: link:../analytics
+      '@eggbot/core':
+        specifier: workspace:*
+        version: link:../core
+      '@eggbot/platform':
+        specifier: workspace:*
+        version: link:../platform
+      '@eggbot/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@eggbot/snapshot':
+        specifier: workspace:*
+        version: link:../snapshot
 
   packages/platform:
     dependencies:

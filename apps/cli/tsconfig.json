@@ -12,6 +12,7 @@
     { "path": "../../packages/agent" },
     { "path": "../../packages/agent-local" },
     { "path": "../../packages/policy" },
+    { "path": "../../packages/manager" },
     { "path": "../../packages/analytics" },
     { "path": "../../packages/snapshot" },
     { "path": "../../packages/storage" },

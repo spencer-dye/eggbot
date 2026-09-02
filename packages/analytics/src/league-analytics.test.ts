@@ -53,6 +53,12 @@ describe('analyzeLeagueSnapshot', () => {
       source: 'test-projections',
       version: 'fixture-1',
     });
+    expect(result.playerProjections[0]).toEqual({
+      playerId: firstQb.id,
+      points: 20,
+      floor: 15,
+      ceiling: 25,
+    });
     expect(result.lineupProjections[0]).toEqual({
       teamId: firstTeamId,
       scoringPeriod: '3',

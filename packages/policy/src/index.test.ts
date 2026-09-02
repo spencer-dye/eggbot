@@ -640,6 +640,7 @@ function analyticsFixture(snapshot: LeagueSnapshot): DecisionRun['analytics'] {
       observedAt: '2026-09-01T11:45:00.000Z',
       source: 'test',
     },
+    playerProjections: [],
     lineupProjections: [
       {
         teamId: managedTeamId,
