@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 7 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 8 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -36,7 +36,7 @@ Implemented deterministic maximum-projection lineup selection with complete-cove
 
 ## Phase 8 — Waiver management
 
-Add/drop decisions, waiver ordering, and budget or priority strategy.
+Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping, projected-gain add/drop selection, ordered claims, priority and budget bidding strategies, policy enforcement for acquisition limits and batch budget, and guarded autonomous dry-run/submission orchestration. Pending-claim outcome reconciliation remains Phase 11 work.
 
 ## Phase 9 — External football intelligence
 

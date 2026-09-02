@@ -266,9 +266,11 @@ function validateSnapshot(
   ) {
     invalid('TEAM_COUNT_MISMATCH', 'teams');
   }
+  validateAcquisitionRules(snapshot);
   const rosterOwners = new Map<string, string>();
   for (const { team, roster, lineup } of snapshot.teams) {
     if (team.leagueId !== leagueId) invalid('TEAM_LEAGUE_MISMATCH', team.id);
+    validateTeamAcquisitionState(team);
     if (roster.teamId !== team.id) invalid('ROSTER_TEAM_MISMATCH', team.id);
     if (lineup.teamId !== team.id) invalid('LINEUP_TEAM_MISMATCH', team.id);
     if (lineup.scoringPeriod !== snapshot.scoringPeriod) {
@@ -367,6 +369,38 @@ function validateSnapshot(
   validateBound(snapshot.playerPool.waivers.coverage);
   validateBound(snapshot.recentTransactions.coverage);
   return warnings;
+}
+
+function validateAcquisitionRules(snapshot: LeagueSnapshot): void {
+  const rules = snapshot.league.settings.acquisitionRules;
+  if (rules === undefined) return;
+  for (const [name, value] of [
+    ['waiverPeriodDays', rules.waiverPeriodDays],
+    ['waiverBudget', rules.waiverBudget],
+    ['maxWeeklyAcquisitions', rules.maxWeeklyAcquisitions],
+    ['maxSeasonAcquisitions', rules.maxSeasonAcquisitions],
+  ] as const) {
+    if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+      invalid('INVALID_ACQUISITION_RULE', name);
+    }
+  }
+}
+
+function validateTeamAcquisitionState(
+  team: LeagueSnapshot['teams'][number]['team'],
+): void {
+  const state = team.acquisitionState;
+  if (state === undefined) return;
+  for (const [name, value] of [
+    ['waiverPriority', state.waiverPriority],
+    ['waiverBudgetRemaining', state.waiverBudgetRemaining],
+    ['seasonAcquisitions', state.seasonAcquisitions],
+    ['weeklyAcquisitions', state.weeklyAcquisitions],
+  ] as const) {
+    if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+      invalid('INVALID_TEAM_ACQUISITION_STATE', `${team.id}.${name}`);
+    }
+  }
 }
 
 function validateBound(coverage: {

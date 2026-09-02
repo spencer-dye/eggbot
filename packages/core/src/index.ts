@@ -9,6 +9,7 @@ export type {
   WaiverClaimAction,
 } from './actions.js';
 export type {
+  AcquisitionRules,
   League,
   LeagueSettings,
   Lineup,
@@ -23,8 +24,10 @@ export type {
   ScoringRule,
   Standing,
   Team,
+  TeamAcquisitionState,
   Transaction,
   TransactionMove,
+  WaiverSystem,
 } from './domain.js';
 export {
   actionId,

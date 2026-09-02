@@ -4,6 +4,7 @@ import type { FantasyAction } from '@eggbot/core';
 import {
   createBuiltInPolicyState,
   detectActionConflicts,
+  evaluateBatchAcquisitionLimits,
   evaluateBatchRosterCapacity,
   evaluateBuiltInAction,
   evaluateGlobalGuardrails,
@@ -63,10 +64,15 @@ export function createPolicyEngine(
         (action) => (draftsByAction.get(action)?.length ?? 0) === 0,
       );
       const batchCapacity = evaluateBatchRosterCapacity(batchCandidates, state);
+      const batchAcquisitions = evaluateBatchAcquisitionLimits(
+        batchCandidates,
+        state,
+      );
       const results = actions.map((action): ActionPolicyEvaluation => {
         const issues = deduplicateIssues([
           ...(draftsByAction.get(action) ?? []),
           ...(batchCapacity.get(action) ?? []),
+          ...(batchAcquisitions.get(action) ?? []),
         ]).map((draft): PolicyIssue => ({
           ...draft,
           actionId: action.id,

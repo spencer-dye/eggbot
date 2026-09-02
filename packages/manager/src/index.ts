@@ -725,3 +725,15 @@ function executionContractError(message: string): never {
     stage: 'execution',
   });
 }
+
+export {
+  AutonomousWaiverManager,
+  WaiverManagementError,
+  type AutonomousWaiverManagerOptions,
+  type WaiverManagementOptions,
+  type WaiverManagementRun,
+  type WaiverManagementStatus,
+  type WaiverProjectionProvider,
+  type WaiverScopeIssue,
+  type WaiverSnapshotCapturer,
+} from './waivers.js';

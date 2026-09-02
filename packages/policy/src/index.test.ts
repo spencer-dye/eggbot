@@ -296,6 +296,63 @@ describe('createPolicyEngine', () => {
     expect(getApprovedActions(evaluation)).toEqual([]);
   });
 
+  it('rejects waiver bids that collectively exceed remaining budget', async () => {
+    const source = snapshotFixture();
+    const secondWaiver = player('second-waiver', ['WR']);
+    const budgetSnapshot: LeagueSnapshot = {
+      ...source,
+      teams: [
+        {
+          ...source.teams[0]!,
+          team: {
+            ...source.teams[0]!.team,
+            acquisitionState: {
+              ...source.teams[0]!.team.acquisitionState,
+              waiverBudgetRemaining: 10,
+            },
+          },
+          roster: {
+            teamId: managedTeamId,
+            entries: source.teams[0]!.roster.entries.slice(0, 1),
+          },
+          lineup: {
+            ...source.teams[0]!.lineup,
+            assignments: source.teams[0]!.lineup.assignments.slice(0, 1),
+          },
+        },
+      ],
+      playerPool: {
+        ...source.playerPool,
+        waivers: {
+          items: [waiverRb, secondWaiver],
+          coverage: { kind: 'bounded', requestedLimit: 10, returnedCount: 2 },
+        },
+      },
+    };
+    const claims: readonly FantasyAction[] = [waiverRb, secondWaiver].map(
+      (target, index) => ({
+        id: actionId(`claim-${index}`),
+        type: 'waiver-claim',
+        leagueId: league,
+        teamId: managedTeamId,
+        addPlayerId: target.id,
+        bid: 6,
+      }),
+    );
+
+    const evaluation = await createPolicyEngine().evaluate(
+      decisionRun(claims, budgetSnapshot),
+      context(),
+    );
+
+    expect(issueCodes(evaluation.results[0])).toContain(
+      'WAIVER_BATCH_BUDGET_EXCEEDED',
+    );
+    expect(issueCodes(evaluation.results[1])).toContain(
+      'WAIVER_BATCH_BUDGET_EXCEEDED',
+    );
+  });
+
   it('does not let an invalid drop create batch capacity', async () => {
     const snapshot = snapshotFixture();
     const openRosterSnapshot: LeagueSnapshot = {
@@ -589,11 +646,21 @@ function snapshotFixture(): LeagueSnapshot {
           },
         ],
         scoringRules: [],
+        acquisitionRules: { waiverSystem: 'budget', waiverBudget: 100 },
       },
     },
     teams: [
       {
-        team: { id: managedTeamId, leagueId: league, name: 'Managed' },
+        team: {
+          id: managedTeamId,
+          leagueId: league,
+          name: 'Managed',
+          acquisitionState: {
+            waiverPriority: 1,
+            waiverBudgetRemaining: 100,
+            seasonAcquisitions: 0,
+          },
+        },
         roster: {
           teamId: managedTeamId,
           entries: [qbStarter, rbStarter, qbBench].map((player) => ({

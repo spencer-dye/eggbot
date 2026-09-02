@@ -190,6 +190,89 @@ export function evaluateBatchRosterCapacity(
   return issues;
 }
 
+export function evaluateBatchAcquisitionLimits(
+  actions: readonly FantasyAction[],
+  state: BuiltInPolicyState,
+): ReadonlyMap<FantasyAction, readonly PolicyIssueDraft[]> {
+  const issues = actionIssueMap(actions);
+  const acquisitions = actions.filter(
+    (
+      action,
+    ): action is Exclude<
+      FantasyAction,
+      { type: 'set-lineup' } | { type: 'drop-player' }
+    > => action.type !== 'set-lineup' && action.type !== 'drop-player',
+  );
+  if (acquisitions.length === 0) return issues;
+  const rules = state.snapshot.league.settings.acquisitionRules;
+  const teamState = state.team.team.acquisitionState;
+  const limits = [
+    {
+      maximum: rules?.maxWeeklyAcquisitions,
+      used: teamState?.weeklyAcquisitions,
+      unavailableCode: 'WEEKLY_ACQUISITION_USAGE_UNAVAILABLE',
+      exceededCode: 'WEEKLY_ACQUISITION_LIMIT_EXCEEDED',
+      label: 'weekly',
+    },
+    {
+      maximum: rules?.maxSeasonAcquisitions,
+      used: teamState?.seasonAcquisitions,
+      unavailableCode: 'SEASON_ACQUISITION_USAGE_UNAVAILABLE',
+      exceededCode: 'SEASON_ACQUISITION_LIMIT_EXCEEDED',
+      label: 'season',
+    },
+  ];
+  for (const limit of limits) {
+    if (limit.maximum === undefined) continue;
+    if (limit.used === undefined) {
+      addToActions(
+        issues,
+        acquisitions,
+        issue(
+          'eggbot.acquisition-limits',
+          limit.unavailableCode,
+          `Cannot verify ${limit.label} acquisition limit because current usage is unavailable`,
+          { kind: 'team', id: state.team.team.id },
+        ),
+      );
+    } else if (limit.used + acquisitions.length > limit.maximum) {
+      addToActions(
+        issues,
+        acquisitions,
+        issue(
+          'eggbot.acquisition-limits',
+          limit.exceededCode,
+          `Action set would exceed the league ${limit.label} acquisition limit`,
+          { kind: 'team', id: state.team.team.id },
+        ),
+      );
+    }
+  }
+  if (rules?.waiverSystem === 'budget') {
+    const claims = acquisitions.filter(
+      (action): action is Extract<FantasyAction, { type: 'waiver-claim' }> =>
+        action.type === 'waiver-claim',
+    );
+    const remaining = teamState?.waiverBudgetRemaining;
+    if (
+      remaining !== undefined &&
+      claims.reduce((total, claim) => total + (claim.bid ?? 0), 0) > remaining
+    ) {
+      addToActions(
+        issues,
+        claims,
+        issue(
+          'eggbot.waiver-budget',
+          'WAIVER_BATCH_BUDGET_EXCEEDED',
+          'Claim batch bids exceed the managed team waiver budget',
+          { kind: 'team', id: state.team.team.id },
+        ),
+      );
+    }
+  }
+  return issues;
+}
+
 export function detectActionConflicts(
   actions: readonly FantasyAction[],
 ): ReadonlyMap<FantasyAction, readonly PolicyIssueDraft[]> {
@@ -491,6 +574,74 @@ function evaluateRosterMutation(
         { kind: 'action', id: action.id },
       ),
     );
+  }
+  if (action.type === 'waiver-claim') {
+    const rules = state.snapshot.league.settings.acquisitionRules;
+    const teamState = state.team.team.acquisitionState;
+    if (rules === undefined || rules.waiverSystem === 'unknown') {
+      issues.push(
+        issue(
+          'eggbot.waiver-system',
+          'WAIVER_SYSTEM_UNAVAILABLE',
+          'Waiver claim cannot be validated without known league waiver rules',
+          { kind: 'action', id: action.id },
+        ),
+      );
+    } else if (rules.waiverSystem === 'budget') {
+      if (action.bid === undefined) {
+        issues.push(
+          issue(
+            'eggbot.waiver-budget',
+            'WAIVER_BID_REQUIRED',
+            'Budget waiver systems require an explicit bid',
+            { kind: 'action', id: action.id },
+          ),
+        );
+      }
+      if (teamState?.waiverBudgetRemaining === undefined) {
+        issues.push(
+          issue(
+            'eggbot.waiver-budget',
+            'WAIVER_BUDGET_UNAVAILABLE',
+            'Managed team waiver budget is unavailable',
+            { kind: 'team', id: state.team.team.id },
+          ),
+        );
+      } else if (
+        action.bid !== undefined &&
+        action.bid > teamState.waiverBudgetRemaining
+      ) {
+        issues.push(
+          issue(
+            'eggbot.waiver-budget',
+            'WAIVER_BUDGET_EXCEEDED',
+            'Waiver bid exceeds the managed team remaining budget',
+            { kind: 'action', id: action.id },
+          ),
+        );
+      }
+    } else {
+      if (teamState?.waiverPriority === undefined) {
+        issues.push(
+          issue(
+            'eggbot.waiver-priority',
+            'WAIVER_PRIORITY_UNAVAILABLE',
+            'Managed team waiver priority is unavailable',
+            { kind: 'team', id: state.team.team.id },
+          ),
+        );
+      }
+      if (action.bid !== undefined) {
+        issues.push(
+          issue(
+            'eggbot.waiver-system',
+            'WAIVER_BID_NOT_SUPPORTED',
+            'Priority-based waiver systems do not accept a budget bid',
+            { kind: 'action', id: action.id },
+          ),
+        );
+      }
+    }
   }
   return issues;
 }

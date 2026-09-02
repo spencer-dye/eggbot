@@ -8,8 +8,12 @@ import {
 import {
   createNoActionDecisionEngine,
   createProjectedLineupDecisionEngine,
+  createProjectedWaiverDecisionEngine,
 } from '@eggbot/agent-local';
-import { AutonomousLineupManager } from '@eggbot/manager';
+import {
+  AutonomousLineupManager,
+  AutonomousWaiverManager,
+} from '@eggbot/manager';
 import { createPolicyEngine } from '@eggbot/policy';
 import {
   actionId,
@@ -82,6 +86,9 @@ async function main(args: readonly string[]): Promise<void> {
         'configurable-guardrails',
         'conflict-detection',
         'batch-roster-capacity',
+        'waiver-system-validation',
+        'acquisition-limit-validation',
+        'batch-waiver-budget',
         'execution-approval',
       ],
       policyEngine: {
@@ -97,9 +104,13 @@ async function main(args: readonly string[]): Promise<void> {
         'freshness-enforcement',
         'mandatory-platform-preflight',
         'post-execution-verification',
+        'autonomous-waiver-dry-run',
+        'autonomous-waiver-execution',
+        'ordered-claims',
+        'budget-aware-bidding',
         'complete-audit-record',
       ],
-      phase: 7,
+      phase: 8,
       writeOperations: 'guarded',
     });
     return;
@@ -127,7 +138,7 @@ async function main(args: readonly string[]): Promise<void> {
     }
   }
   if (
-    command === 'manage-lineup' &&
+    (command === 'manage-lineup' || command === 'manage-waivers') &&
     shouldExecute &&
     process.env.YAHOO_ENABLE_WRITES !== '1'
   ) {
@@ -311,6 +322,96 @@ async function main(args: readonly string[]): Promise<void> {
           allowWrites: shouldExecute,
         }),
         lineupReader: reader,
+        maxProjectionAgeMs:
+          readNumberOption(commandArgs, '--max-projection-age-ms') ??
+          30 * 60 * 1_000,
+      });
+      printJson(
+        await manager.run({
+          leagueId,
+          managedTeamId,
+          scoringPeriod,
+          executionMode: shouldExecute ? 'execute' : 'dry-run',
+          freeAgentLimit:
+            readNumberOption(commandArgs, '--free-agent-limit') ?? 50,
+          waiverLimit: readNumberOption(commandArgs, '--waiver-limit') ?? 50,
+          transactionLimit:
+            readNumberOption(commandArgs, '--transaction-limit') ?? 25,
+          teamReadConcurrency:
+            readNumberOption(commandArgs, '--team-concurrency') ?? 4,
+        }),
+      );
+      break;
+    }
+    case 'manage-waivers': {
+      const leagueId = asLeagueId(
+        requireArgument(commandArgs, 0, 'league key'),
+      );
+      const managedTeamId = asTeamId(
+        requireArgument(commandArgs, 1, 'team key'),
+      );
+      const scoringPeriod = requireArgument(commandArgs, 2, 'week');
+      const projectionSet = await readProjectionFile(
+        requireOption(commandArgs, '--projections'),
+      );
+      const fixedBid = readNonNegativeFiniteOption(commandArgs, '--bid');
+      const bidPercentage = readNonNegativeFiniteOption(
+        commandArgs,
+        '--bid-percent',
+      );
+      if (fixedBid !== undefined && bidPercentage !== undefined) {
+        throw new Error('Use either --bid or --bid-percent, not both');
+      }
+      const maximumActions =
+        readNumberOption(commandArgs, '--max-actions') ?? 1;
+      const maxWaiverBid = readNonNegativeFiniteOption(
+        commandArgs,
+        '--max-waiver-bid',
+      );
+      const maximumWaiverPriorityRank = readNumberOption(
+        commandArgs,
+        '--max-waiver-priority',
+      );
+      const maxSnapshotAgeMs =
+        readNumberOption(commandArgs, '--max-snapshot-age-ms') ??
+        5 * 60 * 1_000;
+      const manager = new AutonomousWaiverManager({
+        snapshotService: new LeagueSnapshotService({ reader }),
+        projectionProvider: {
+          getProjections: () => Promise.resolve(projectionSet),
+        },
+        decisionEngine: createProjectedWaiverDecisionEngine({
+          maximumActions,
+          minimumProjectedPointGain:
+            readNonNegativeFiniteOption(commandArgs, '--minimum-gain') ?? 1,
+          includeFreeAgents: !commandArgs.includes('--waivers-only'),
+          ...(maximumWaiverPriorityRank === undefined
+            ? {}
+            : { maximumWaiverPriorityRank }),
+          ...(fixedBid !== undefined
+            ? { bidStrategy: { kind: 'fixed' as const, amount: fixedBid } }
+            : bidPercentage !== undefined
+              ? {
+                  bidStrategy: {
+                    kind: 'percentage-of-remaining' as const,
+                    percentage: bidPercentage,
+                  },
+                }
+              : {}),
+        }),
+        policyEngine: createPolicyEngine({
+          guardrails: {
+            maxSnapshotAgeMs,
+            maxActionsPerDecision: maximumActions,
+            maxRosterMutationActions: maximumActions,
+            ...(maxWaiverBid === undefined ? {} : { maxWaiverBid }),
+          },
+        }),
+        executor: new YahooFantasyExecutor({
+          httpClient,
+          reader,
+          allowWrites: shouldExecute,
+        }),
         maxProjectionAgeMs:
           readNumberOption(commandArgs, '--max-projection-age-ms') ??
           30 * 60 * 1_000,
@@ -679,6 +780,12 @@ function printHelp(): void {
       --projections path [--minimum-gain points]
       [--max-snapshot-age-ms milliseconds]
       [--max-projection-age-ms milliseconds] [--execute]
+  pnpm cli yahoo manage-waivers <league-key> <team-key> <week>
+      --projections path [--minimum-gain points] [--max-actions count]
+      [--bid amount | --bid-percent fraction] [--max-waiver-bid amount]
+      [--max-waiver-priority rank]
+      [--waivers-only] [--max-snapshot-age-ms milliseconds]
+      [--max-projection-age-ms milliseconds] [--execute]
   pnpm cli yahoo lineup-change <league-key> <team-key> <week>
       <player-key=Yahoo-position,...> [--action-id id] [--execute]
   pnpm cli yahoo add <league-key> <team-key> <player-key>
@@ -691,8 +798,8 @@ function printHelp(): void {
       [drop-player-key] [--bid amount] [--action-id id] [--execute]
 
 Direct write commands print an XML preview by default. Direct live writes require
---execute, --action-id, and YAHOO_ENABLE_WRITES=1. Autonomous lineup execution
-uses a host-owned action ID and requires --execute plus YAHOO_ENABLE_WRITES=1.
+--execute, --action-id, and YAHOO_ENABLE_WRITES=1. Autonomous lineup and waiver
+execution use host-owned action IDs and require --execute plus YAHOO_ENABLE_WRITES=1.
 
 Environment:
   YAHOO_CLIENT_ID              required for Yahoo commands

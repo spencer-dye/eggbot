@@ -70,6 +70,12 @@ describe('Yahoo response mappers', () => {
         { num_teams: '10' },
         {
           settings: [
+            { waiver_type: 'FAB' },
+            { uses_faab: '1' },
+            { waiver_time: '2' },
+            { waiver_budget: '100' },
+            { max_weekly_adds: '4' },
+            { max_season_adds: '40' },
             {
               roster_positions: {
                 0: { roster_position: [{ position: 'QB' }, { count: '1' }] },
@@ -114,6 +120,13 @@ describe('Yahoo response mappers', () => {
     expect(league.settings.scoringRules).toEqual([
       { key: 'yahoo.stat.4', points: 4, description: 'Passing Touchdowns' },
     ]);
+    expect(league.settings.acquisitionRules).toEqual({
+      waiverSystem: 'budget',
+      waiverPeriodDays: 2,
+      waiverBudget: 100,
+      maxWeeklyAcquisitions: 4,
+      maxSeasonAcquisitions: 40,
+    });
   });
 
   it('maps teams, rosters, lineups, and available players', () => {
@@ -152,6 +165,31 @@ describe('Yahoo response mappers', () => {
       },
     ]);
     expect(mapPlayers(content)).toHaveLength(1);
+  });
+
+  it('maps current team waiver priority, budget, and move count', () => {
+    expect(
+      mapTeams({
+        team: [
+          { team_key: teamOneKey },
+          { name: 'Egg Heads' },
+          { waiver_priority: '3' },
+          { faab_balance: '72' },
+          { number_of_moves: '5' },
+        ],
+      }),
+    ).toEqual([
+      {
+        id: `yahoo:team:${teamOneKey}`,
+        leagueId: `yahoo:league:${leagueKey}`,
+        name: 'Egg Heads',
+        acquisitionState: {
+          waiverPriority: 3,
+          waiverBudgetRemaining: 72,
+          seasonAcquisitions: 5,
+        },
+      },
+    ]);
   });
 
   it('maps standings and matchup scores without assuming two participants globally', () => {

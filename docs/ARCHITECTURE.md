@@ -2,7 +2,7 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 7 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, and autonomous lineup orchestration without choosing a league format, model provider, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 8 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, and autonomous lineup and waiver orchestration without choosing a league format, model provider, database, scheduler, or deployment environment.
 
 ## Workspace layout
 
@@ -48,6 +48,16 @@ flowchart TD
   N --> C
   FP --> C
 ```
+
+## Phase 8 public API changes
+
+The original domain could express a waiver claim and optional bid, but the snapshot could not say which waiver system governed the league, how much budget or priority the managed team held, or whether acquisition limits were exhausted. Autonomous waiver behavior could therefore construct syntactically valid actions without the state required to judge them. Phase 8 additively introduces `AcquisitionRules` on `LeagueSettings` and `TeamAcquisitionState` on `Team`. Both are optional because platforms and league formats expose different subsets; absence stays explicit and causes conservative abstention or policy rejection where the missing fact is required. Yahoo maps its waiver type, FAAB, priority, and move metadata at the adapter boundary.
+
+`createProjectedWaiverDecisionEngine` is a deterministic acquisition strategy. It considers captured free agents and waiver players, protects active and reserve placements from automatic drops, requires complete candidate projections by default, ranks actions by net projected roster gain, and preserves that ranking as proposal/claim order. It supports fixed and remaining-budget-percentage bids. Budget claims require observed remaining budget, all selected bids fit within that balance in the worst case, and configured league limits reduce or block the proposal. Bounded player pools remain visible; the engine does not claim it found the globally optimal player outside the capture.
+
+`AutonomousWaiverManager` composes the same snapshot, projection, decision, policy, freshness, contract-validation, and mandatory provider-preflight boundaries used by lineup automation. It permits only add, atomic add/drop, and waiver-claim actions, and rejects the entire ordered plan when any action fails policy so a lower-priority claim is not silently promoted. An accepted waiver claim is recorded as `submitted`, not as an immediately verified roster mutation: waiver resolution occurs later and durable reconciliation remains Phase 11 work.
+
+Policy independently validates known waiver-system semantics, required and supported bids, individual and batch remaining budget, and weekly/season acquisition limits. This makes the strategy replaceable without making it a safety boundary.
 
 ## Phase 7 public API changes
 

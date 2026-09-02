@@ -36,6 +36,26 @@ export interface LeagueSettings {
   readonly rosterSlots: readonly RosterSlot[];
   readonly scoringRules: readonly ScoringRule[];
   readonly teamCount?: number;
+  readonly acquisitionRules?: AcquisitionRules;
+}
+
+export type WaiverSystem = 'priority' | 'budget' | 'unknown';
+
+/** Normalized league controls relevant to acquisitions and waiver claims. */
+export interface AcquisitionRules {
+  readonly waiverSystem: WaiverSystem;
+  readonly waiverPeriodDays?: number;
+  readonly waiverBudget?: number;
+  readonly maxWeeklyAcquisitions?: number;
+  readonly maxSeasonAcquisitions?: number;
+}
+
+/** Current team-relative acquisition state, separate from static league rules. */
+export interface TeamAcquisitionState {
+  readonly waiverPriority?: number;
+  readonly waiverBudgetRemaining?: number;
+  readonly seasonAcquisitions?: number;
+  readonly weeklyAcquisitions?: number;
 }
 
 export interface League {
@@ -49,6 +69,7 @@ export interface Team {
   readonly id: TeamId;
   readonly leagueId: LeagueId;
   readonly name: string;
+  readonly acquisitionState?: TeamAcquisitionState;
 }
 
 export interface Player {

@@ -49,3 +49,8 @@ export {
   createProjectedLineupDecisionEngine,
   type ProjectedLineupDecisionEngineOptions,
 } from './projected-lineup.js';
+export {
+  createProjectedWaiverDecisionEngine,
+  type ProjectedWaiverDecisionEngineOptions,
+  type WaiverBidStrategy,
+} from './projected-waivers.js';

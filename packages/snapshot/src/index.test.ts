@@ -125,6 +125,21 @@ describe('LeagueSnapshotService', () => {
     expect(reader.getLeague).not.toHaveBeenCalled();
   });
 
+  it('rejects invalid normalized team acquisition state', async () => {
+    const reader = readerFixture();
+    reader.getTeams.mockResolvedValue([
+      {
+        ...teams[0]!,
+        acquisitionState: { waiverBudgetRemaining: -1 },
+      },
+      teams[1]!,
+    ]);
+
+    await expect(
+      serviceFor(reader).capture(captureOptions()),
+    ).rejects.toMatchObject({ code: 'INVALID_TEAM_ACQUISITION_STATE' });
+  });
+
   it('rejects a configured team-count mismatch', async () => {
     const reader = readerFixture();
     reader.getTeams.mockResolvedValue([teams[0] as Team]);

@@ -7,6 +7,7 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **League** identifies a competition for a season and owns its `LeagueSettings`.
 - **LeagueSettings** describes roster slots and scoring rules without assuming a league size or scoring preset.
 - **Team** is a fantasy team within a league.
+- **AcquisitionRules** describe provider-neutral waiver-system, budget, period, and acquisition-limit settings; **TeamAcquisitionState** records the currently observed priority, remaining budget, and usage where supplied.
 - **Player** is a football player eligible for one or more positions. Provider identifiers are not player IDs.
 - **Roster** is the complete set of players controlled by a fantasy team.
 - **Lineup** assigns rostered players to slots for one scoring period.
@@ -21,6 +22,7 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **PolicyEvaluation** records every deterministic approval or rejection for a decision run, with structured rule attribution and conflict context.
 - **PolicyApproval** is the explicitly derived, provenance-bearing subset of actions policy approved for possible execution. It is not proof that a platform will accept them.
 - **LineupManagementRun** is the complete Phase 7 workflow record. It associates one snapshot and exact projection-backed analytics with its decision, policy evaluation, optional approval, platform dry-run results, execution results, post-execution lineup verification, timestamps, scope findings, and terminal status. Executor success and observed-state verification are intentionally separate facts.
+- **WaiverManagementRun** is the Phase 8 ordered-acquisition workflow record. It retains the same provenance and preflight evidence while distinguishing a submitted pending waiver claim from a resolved roster change.
 - **ActionResult** records a local dry run, a durably recorded execution, an uncertain execution outcome, or a failed attempt with a code, message, and retryability signal.
 - **LeagueSnapshot** is a normalized, timestamped observation window containing league-wide state for one scoring period. It groups team rosters and lineups, standings, matchups, acquisition pools, and recent transactions without claiming provider-level atomic consistency.
 

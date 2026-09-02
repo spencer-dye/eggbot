@@ -17,6 +17,7 @@ export interface PolicyIssueResource {
     | 'decision'
     | 'snapshot'
     | 'action'
+    | 'team'
     | 'player'
     | 'roster-slot'
     | 'scoring-period';

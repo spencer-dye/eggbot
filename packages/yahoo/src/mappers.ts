@@ -11,6 +11,7 @@ import type {
   Team,
   Transaction,
   TransactionMove,
+  WaiverSystem,
 } from '@eggbot/core';
 import type { FantasyGame, LeagueSummary } from '@eggbot/platform';
 import { z } from 'zod';
@@ -53,6 +54,9 @@ const leagueSchema = leagueSummarySchema.extend({
 const teamSchema = z.object({
   team_key: z.string().min(1),
   name: z.string().min(1),
+  waiver_priority: z.coerce.number().int().positive().optional(),
+  faab_balance: z.coerce.number().nonnegative().optional(),
+  number_of_moves: z.coerce.number().int().nonnegative().optional(),
 });
 
 const playerSchema = z.object({
@@ -122,6 +126,7 @@ export function mapLeague(content: unknown): League {
     settings: {
       rosterSlots: mapRosterSlots(league.settings, league.league_key),
       scoringRules: mapScoringRules(league.settings),
+      ...mapAcquisitionRules(league.settings),
       ...(league.num_teams === undefined
         ? {}
         : { teamCount: league.num_teams }),
@@ -266,11 +271,80 @@ export function mapTransactions(
 
 function mapTeamResource(resource: unknown): Team {
   const team = parseResource(teamSchema, resource, 'team');
+  const acquisitionState = {
+    ...(team.waiver_priority === undefined
+      ? {}
+      : { waiverPriority: team.waiver_priority }),
+    ...(team.faab_balance === undefined
+      ? {}
+      : { waiverBudgetRemaining: team.faab_balance }),
+    ...(team.number_of_moves === undefined
+      ? {}
+      : { seasonAcquisitions: team.number_of_moves }),
+  };
   return {
     id: yahooTeamId(team.team_key),
     leagueId: yahooLeagueId(yahooLeagueKeyFromTeamKey(team.team_key)),
     name: team.name,
+    ...(Object.keys(acquisitionState).length === 0 ? {} : { acquisitionState }),
   };
+}
+
+function mapAcquisitionRules(
+  settings: unknown,
+): Pick<League['settings'], 'acquisitionRules'> {
+  const waiverType = scalarString(findFirstValue(settings, 'waiver_type'));
+  const waiverRule = scalarString(findFirstValue(settings, 'waiver_rule'));
+  const usesFaab = booleanValue(findFirstValue(settings, 'uses_faab'));
+  const waiverPeriodDays = optionalNumber(
+    findFirstValue(settings, 'waiver_time'),
+  );
+  const waiverBudget = optionalNumber(
+    findFirstValue(settings, 'waiver_budget'),
+  );
+  const maxWeeklyAcquisitions = positiveLimit(
+    findFirstValue(settings, 'max_weekly_adds'),
+  );
+  const maxSeasonAcquisitions = positiveLimit(
+    findFirstValue(settings, 'max_season_adds'),
+  );
+  if (
+    waiverType === undefined &&
+    waiverRule === undefined &&
+    usesFaab === undefined &&
+    waiverPeriodDays === undefined &&
+    waiverBudget === undefined &&
+    maxWeeklyAcquisitions === undefined &&
+    maxSeasonAcquisitions === undefined
+  ) {
+    return {};
+  }
+  return {
+    acquisitionRules: {
+      waiverSystem: normalizeWaiverSystem(waiverType, waiverRule, usesFaab),
+      ...(waiverPeriodDays === undefined ? {} : { waiverPeriodDays }),
+      ...(waiverBudget === undefined ? {} : { waiverBudget }),
+      ...(maxWeeklyAcquisitions === undefined ? {} : { maxWeeklyAcquisitions }),
+      ...(maxSeasonAcquisitions === undefined ? {} : { maxSeasonAcquisitions }),
+    },
+  };
+}
+
+function normalizeWaiverSystem(
+  waiverType: string | undefined,
+  waiverRule: string | undefined,
+  usesFaab: boolean | undefined,
+): WaiverSystem {
+  if (usesFaab === true || waiverType?.toUpperCase().includes('FAB')) {
+    return 'budget';
+  }
+  if (
+    waiverType !== undefined ||
+    waiverRule !== undefined ||
+    usesFaab === false
+  )
+    return 'priority';
+  return 'unknown';
 }
 
 function mapPlayerResource(resource: unknown): Player {
@@ -448,6 +522,18 @@ function optionalNumber(value: unknown): number | undefined {
     if (Number.isFinite(number)) return number;
   }
   return undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === 1 || value === '1') return true;
+  if (value === 0 || value === '0') return false;
+  return undefined;
+}
+
+function positiveLimit(value: unknown): number | undefined {
+  const number = optionalNumber(value);
+  return number === undefined || number <= 0 ? undefined : number;
 }
 
 function requiredNumber(value: unknown, resource: string): number {

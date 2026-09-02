@@ -9,7 +9,7 @@ Phase 1 reads include:
 - injected token persistence and `fetch` boundaries
 - authenticated Fantasy API transport
 - validation of Yahoo JSON envelopes and resources
-- normalized games, leagues/settings, teams, rosters/lineups, standings, matchups, available/free-agent/waiver players, and transactions
+- normalized games, leagues/settings (including acquisition rules), teams (including current waiver priority/budget where supplied), rosters/lineups, standings, matchups, available/free-agent/waiver players, and transactions
 
 Construct `YahooOAuthClient`, pass it to `YahooHttpClient`, and inject that into `YahooFantasyReader`. Configuration is explicit; the package never reads environment variables or writes tokens itself.
 
