@@ -40,7 +40,7 @@ Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping
 
 ## Phase 9 — External football intelligence
 
-Implemented provider-neutral, provenance-bearing injuries, projections, depth charts, usage, news, and professional schedules in `@eggbot/football-data`. Strict public parsers validate adapter output, and a scoped multi-read capture service preserves the best-effort observation window. Projection types moved to their correct owning boundary while `@eggbot/analytics` re-exports them for compatibility. Concrete commercial data providers remain application-selected adapters rather than framework defaults.
+Implemented provider-neutral, provenance-bearing injuries, projections, depth charts, usage, news, and professional schedules in `@eggbot/football-data`. An explicit identity resolver maps EggBot player IDs to provider-owned references before reads. Strict public parsers validate adapter output, and a temporally coherent, scoped multi-read capture service preserves the best-effort observation window. Projection types moved to their correct owning boundary while `@eggbot/analytics` re-exports them for compatibility. Concrete commercial data providers and identity-registry persistence remain application-selected adapters rather than framework defaults.
 
 ## Phase 10 — Trade support
 

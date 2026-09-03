@@ -10,6 +10,7 @@ import {
   parseUsageSet,
   type FootballDataProvider,
   type FootballDataRequest,
+  type PlayerIdentityResolver,
 } from './index.js';
 
 const first = playerId('player-1');
@@ -25,12 +26,14 @@ const request: FootballDataRequest = {
 describe('FootballIntelligenceService', () => {
   it('captures and validates every intelligence source concurrently', async () => {
     const provider = testProvider();
+    const identityResolver = testIdentityResolver();
     const timestamps = [
       new Date('2026-09-02T12:00:01.000Z'),
       new Date('2026-09-02T12:00:02.000Z'),
     ];
     const service = new FootballIntelligenceService({
       provider,
+      identityResolver,
       clock: () => timestamps.shift()!,
     });
 
@@ -49,18 +52,36 @@ describe('FootballIntelligenceService', () => {
       news: { items: [{ id: 'news-1', playerIds: [first] }] },
       schedule: { games: [{ id: 'game-1', homeTeam: 'SEA', awayTeam: 'SF' }] },
     });
+    const providerRequest = {
+      scoringPeriod: 'week-1',
+      players: [
+        {
+          playerId: first,
+          reference: { provider: provider.id, value: 'external-player-1' },
+        },
+        {
+          playerId: second,
+          reference: { provider: provider.id, value: 'external-player-2' },
+        },
+      ],
+      professionalTeams: ['SEA', 'SF'],
+    };
+    expect(identityResolver.resolve).toHaveBeenCalledWith(
+      request.playerIds,
+      provider.id,
+    );
     expect(provider.getInjuries).toHaveBeenCalledOnce();
-    expect(provider.getInjuries).toHaveBeenCalledWith(request);
+    expect(provider.getInjuries).toHaveBeenCalledWith(providerRequest);
     expect(provider.getProjections).toHaveBeenCalledOnce();
-    expect(provider.getProjections).toHaveBeenCalledWith(request);
+    expect(provider.getProjections).toHaveBeenCalledWith(providerRequest);
     expect(provider.getDepthCharts).toHaveBeenCalledOnce();
-    expect(provider.getDepthCharts).toHaveBeenCalledWith(request);
+    expect(provider.getDepthCharts).toHaveBeenCalledWith(providerRequest);
     expect(provider.getUsage).toHaveBeenCalledOnce();
-    expect(provider.getUsage).toHaveBeenCalledWith(request);
+    expect(provider.getUsage).toHaveBeenCalledWith(providerRequest);
     expect(provider.getNews).toHaveBeenCalledOnce();
-    expect(provider.getNews).toHaveBeenCalledWith(request);
+    expect(provider.getNews).toHaveBeenCalledWith(providerRequest);
     expect(provider.getSchedule).toHaveBeenCalledOnce();
-    expect(provider.getSchedule).toHaveBeenCalledWith(request);
+    expect(provider.getSchedule).toHaveBeenCalledWith(providerRequest);
   });
 
   it('fails closed when period-bound provider data targets another period', async () => {
@@ -75,7 +96,10 @@ describe('FootballIntelligenceService', () => {
     });
 
     await expect(
-      new FootballIntelligenceService({ provider }).capture(request),
+      new FootballIntelligenceService({
+        provider,
+        identityResolver: testIdentityResolver(),
+      }).capture(request),
     ).rejects.toMatchObject({
       code: 'FOOTBALL_DATA_PERIOD_MISMATCH',
       resource: 'usage:week-2:week-1',
@@ -95,7 +119,10 @@ describe('FootballIntelligenceService', () => {
     });
 
     await expect(
-      new FootballIntelligenceService({ provider }).capture(request),
+      new FootballIntelligenceService({
+        provider,
+        identityResolver: testIdentityResolver(),
+      }).capture(request),
     ).rejects.toMatchObject({
       code: 'PLAYER_OUTSIDE_REQUEST_SCOPE',
       resource: 'unexpected',
@@ -112,8 +139,96 @@ describe('FootballIntelligenceService', () => {
     });
 
     await expect(
-      new FootballIntelligenceService({ provider }).capture(request),
+      new FootballIntelligenceService({
+        provider,
+        identityResolver: testIdentityResolver(),
+      }).capture(request),
     ).rejects.toBe(providerError);
+  });
+
+  it('fails closed when identity resolution is incomplete', async () => {
+    const provider = testProvider();
+    const identityResolver: PlayerIdentityResolver = {
+      resolve: vi.fn(() =>
+        Promise.resolve([
+          {
+            playerId: first,
+            reference: { provider: provider.id, value: 'external-player-1' },
+          },
+        ]),
+      ),
+    };
+
+    await expect(
+      new FootballIntelligenceService({ provider, identityResolver }).capture(
+        request,
+      ),
+    ).rejects.toMatchObject({
+      code: 'IDENTITY_RESOLUTION_INCOMPLETE',
+      resource: second,
+    });
+    expect(provider.getProjections).not.toHaveBeenCalled();
+  });
+
+  it('rejects future provenance relative to the capture time', async () => {
+    const provider = testProvider({
+      getProjections: vi.fn(() =>
+        Promise.resolve({
+          ...provenance,
+          observedAt: '2026-09-02T12:00:03.000Z',
+          scoringPeriod: 'week-1',
+          players: [],
+        }),
+      ),
+    });
+    const timestamps = [
+      new Date('2026-09-02T12:00:01.000Z'),
+      new Date('2026-09-02T12:00:02.000Z'),
+    ];
+
+    await expect(
+      new FootballIntelligenceService({
+        provider,
+        identityResolver: testIdentityResolver(),
+        clock: () => timestamps.shift()!,
+      }).capture(request),
+    ).rejects.toMatchObject({
+      code: 'FUTURE_FOOTBALL_DATA_TIMESTAMP',
+      resource: 'projections.observedAt',
+    });
+  });
+
+  it('rejects future timestamps on individual news records', async () => {
+    const provider = testProvider({
+      getNews: vi.fn(() =>
+        Promise.resolve({
+          ...provenance,
+          items: [
+            {
+              id: 'news-1',
+              playerIds: [first],
+              headline: 'Future update',
+              publishedAt: '2026-09-02T12:00:03.000Z',
+            },
+          ],
+        }),
+      ),
+    });
+    const timestamps = [
+      new Date('2026-09-02T12:00:01.000Z'),
+      new Date('2026-09-02T12:00:02.000Z'),
+    ];
+
+    await expect(
+      new FootballIntelligenceService({
+        provider,
+        identityResolver: testIdentityResolver(),
+        clock: () => timestamps.shift()!,
+      }).capture(request),
+    ).rejects.toMatchObject({
+      code: 'FUTURE_FOOTBALL_DATA_TIMESTAMP',
+      resource: 'news:news-1.publishedAt',
+    });
   });
 });
 
@@ -137,6 +252,13 @@ describe('football data boundary parsers', () => {
           { playerId: 'player-1', points: 10 },
           { playerId: 'player-1', points: 11 },
         ],
+      }),
+    ).toThrowError(FootballDataValidationError);
+    expect(() =>
+      parseProjectionSet({
+        ...provenance,
+        scoringPeriod: 'week-1',
+        players: [{ playerId: 'player-1', points: Number.POSITIVE_INFINITY }],
       }),
     ).toThrowError(FootballDataValidationError);
     expect(() =>
@@ -192,7 +314,41 @@ describe('football data boundary parsers', () => {
       }),
     ).toThrowError(FootballDataValidationError);
   });
+
+  it('normalizes duplicate player references within one news item', () => {
+    expect(
+      parsePlayerNewsSet({
+        ...provenance,
+        items: [
+          {
+            id: 'news-1',
+            playerIds: ['player-1', 'player-1', 'player-2'],
+            headline: 'Shared update',
+            publishedAt: observedAt,
+          },
+        ],
+      }).items[0]?.playerIds,
+    ).toEqual([first, second]);
+  });
 });
+
+function testIdentityResolver(): PlayerIdentityResolver & {
+  readonly resolve: ReturnType<typeof vi.fn>;
+} {
+  return {
+    resolve: vi.fn((playerIds: readonly string[], provider: string) =>
+      Promise.resolve(
+        playerIds.map((id, index) => ({
+          playerId: playerId(id),
+          reference: {
+            provider,
+            value: `external-player-${index + 1}`,
+          },
+        })),
+      ),
+    ),
+  };
+}
 
 function testProvider(
   overrides: Partial<FootballDataProvider> = {},

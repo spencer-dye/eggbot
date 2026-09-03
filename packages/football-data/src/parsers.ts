@@ -22,8 +22,9 @@ const provenance = {
   source: nonEmpty,
   version: nonEmpty.optional(),
 };
-const count = z.number().int().nonnegative();
-const share = z.number().min(0).max(1);
+const finiteNumber = z.number().finite();
+const count = finiteNumber.int().nonnegative();
+const share = finiteNumber.min(0).max(1);
 
 const projectionSetSchema = z
   .object({
@@ -33,9 +34,9 @@ const projectionSetSchema = z
       z
         .object({
           playerId: nonEmpty,
-          points: z.number(),
-          floor: z.number().optional(),
-          ceiling: z.number().optional(),
+          points: finiteNumber,
+          floor: finiteNumber.optional(),
+          ceiling: finiteNumber.optional(),
         })
         .strict()
         .superRefine((projection, context) => {
@@ -99,7 +100,7 @@ const depthChartSetSchema = z
           playerId: nonEmpty,
           professionalTeam: nonEmpty,
           position: nonEmpty,
-          rank: z.number().int().positive(),
+          rank: finiteNumber.int().positive(),
           role: nonEmpty.optional(),
         })
         .strict(),
@@ -298,7 +299,7 @@ export function parsePlayerNewsSet(value: unknown): PlayerNewsSet {
       ...normalizeProvenance(set),
       items: set.items.map((item) => ({
         id: item.id,
-        playerIds: item.playerIds.map((id) => playerId(id)),
+        playerIds: unique(item.playerIds).map((id) => playerId(id)),
         headline: item.headline,
         publishedAt: item.publishedAt,
         ...(item.summary === undefined ? {} : { summary: item.summary }),
@@ -371,6 +372,10 @@ function assertUnique(values: readonly string[], label: string): void {
     }
     seen.add(value);
   }
+}
+
+function unique(values: readonly string[]): readonly string[] {
+  return [...new Set(values)];
 }
 
 export function playerIdsInNews(set: PlayerNewsSet): readonly PlayerId[] {

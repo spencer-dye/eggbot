@@ -1,4 +1,4 @@
-import type { PlayerId } from '@eggbot/core';
+import type { PlatformReference, PlayerId } from '@eggbot/core';
 
 export interface FootballDataProvenance {
   readonly observedAt: string;
@@ -114,21 +114,47 @@ export interface FootballDataRequest {
   readonly professionalTeams?: readonly string[];
 }
 
+/** Explicit mapping between one EggBot player and a provider-owned identity. */
+export interface ExternalPlayerReference {
+  readonly playerId: PlayerId;
+  readonly reference: PlatformReference;
+}
+
+export interface PlayerIdentityResolver {
+  readonly resolve: (
+    playerIds: readonly PlayerId[],
+    provider: string,
+  ) => Promise<readonly ExternalPlayerReference[]>;
+}
+
+/** Provider-facing request after EggBot identities have been resolved. */
+export interface FootballDataProviderRequest {
+  readonly scoringPeriod: string;
+  readonly players?: readonly ExternalPlayerReference[];
+  readonly professionalTeams?: readonly string[];
+}
+
 export interface FootballDataProvider {
   readonly id: string;
   readonly version: string;
   readonly getInjuries: (
-    request: FootballDataRequest,
+    request: FootballDataProviderRequest,
   ) => Promise<InjuryReportSet>;
   readonly getProjections: (
-    request: FootballDataRequest,
+    request: FootballDataProviderRequest,
   ) => Promise<ProjectionSet>;
   readonly getDepthCharts: (
-    request: FootballDataRequest,
+    request: FootballDataProviderRequest,
   ) => Promise<DepthChartSet>;
-  readonly getUsage: (request: FootballDataRequest) => Promise<UsageSet>;
-  readonly getNews: (request: FootballDataRequest) => Promise<PlayerNewsSet>;
-  readonly getSchedule: (request: FootballDataRequest) => Promise<ScheduleSet>;
+  readonly getUsage: (
+    request: FootballDataProviderRequest,
+  ) => Promise<UsageSet>;
+  readonly getNews: (
+    request: FootballDataProviderRequest,
+  ) => Promise<PlayerNewsSet>;
+  readonly getSchedule: (
+    request: FootballDataProviderRequest,
+  ) => Promise<ScheduleSet>;
 }
 
 /** Multi-request external observation window; providers need not be atomic. */

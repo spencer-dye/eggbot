@@ -10,6 +10,7 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **AcquisitionRules** describe provider-neutral waiver-system, budget, period, and acquisition-limit settings; **TeamAcquisitionState** records the currently observed priority, remaining budget, and usage where supplied.
 - **Player** is a football player eligible for one or more positions. Provider identifiers are not player IDs.
 - **FootballDataProvenance** identifies the source, observation time, and optional version of one external football-intelligence data set.
+- **ExternalPlayerReference** explicitly maps one EggBot `PlayerId` to a provider-owned `PlatformReference`; it is resolved before external football-data reads and never stored on `Player`.
 - **PlayerInjury** records a normalized availability status and optional reported detail or expected return without changing fantasy-platform roster state.
 - **PlayerProjection** is a period-bound expected-points input with optional floor and ceiling. It is external evidence, not an analytic result.
 - **DepthChartEntry** records a player's professional-team position and rank. Its football position label is distinct from fantasy-slot eligibility.
@@ -73,6 +74,8 @@ Platform state is observed source data. Analytics are deterministic values deriv
 ### Fantasy-platform data versus football intelligence
 
 Fantasy-platform reads describe league ownership, rules, lineups, standings, transactions, and acquisition pools. External football intelligence describes the underlying sport: injuries, expected performance, depth-chart role, usage, news, and professional games. `FootballDataProvider` cannot read or mutate a fantasy roster, and `FantasyPlatformReader` does not become an injury or projection feed. Applications join both through EggBot player IDs and preserve each source's independent observation time.
+
+EggBot player IDs and external vendor IDs are not assumed to be interchangeable. A `PlayerIdentityResolver` maps requested EggBot IDs to provider-owned references before a football-data adapter is called. Resolution must be complete and unambiguous; provider adapters use that mapping to return normalized records keyed by the original EggBot IDs. Vendor identifiers remain outside `Player` and the core domain.
 
 ### Snapshot coverage and consistency
 
