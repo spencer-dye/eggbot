@@ -41,11 +41,18 @@ export {
   type AuditOutcome,
   type AuditQuery,
 } from './audit-history.js';
+export {
+  AuditedOperationRunner,
+  OperationalAuditError,
+  type AuditedOperation,
+  type AuditedOperationRunnerOptions,
+} from './audited-operation.js';
 
 export const storageCapabilities = [
   'database-neutral-port',
   'atomic-file-storage',
   'no-clobber-create',
   'immutable-audit-history',
+  'audited-operation-lifecycle',
   'recovery-scans',
 ] as const;

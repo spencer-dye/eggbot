@@ -30,10 +30,13 @@ export interface Scheduler {
   cancel(jobId: string): Promise<boolean>;
 }
 
-export type JobRunStatus = 'scheduled' | 'running' | 'completed' | 'failed';
+export type JobRunStatus =
+  'scheduled' | 'running' | 'completed' | 'failed' | 'canceled';
 
 export interface JobState {
   readonly jobId: string;
+  /** Monotonic attempt/cancellation generation used to reject stale writers. */
+  readonly generation: number;
   readonly trigger: JobTrigger;
   readonly status: JobRunStatus;
   readonly attempts: number;
@@ -96,6 +99,7 @@ export class RecoverableScheduler implements Scheduler {
     string,
     {
       job: ScheduledJob;
+      generation: number;
       timer?: ReturnType<typeof setTimeout>;
       controller?: AbortController;
     }
@@ -116,12 +120,18 @@ export class RecoverableScheduler implements Scheduler {
     if (previous !== undefined && !sameTrigger(previous.trigger, job.trigger)) {
       throw new Error(`Job ${job.id} trigger conflicts with durable state`);
     }
-    if (previous?.status === 'completed' && job.trigger.type === 'once') return;
+    if (
+      previous?.status === 'canceled' ||
+      (previous?.status === 'completed' && job.trigger.type === 'once')
+    ) {
+      return;
+    }
 
     const now = this.#timestamp();
     const nextRunAt = recoveredNextRunAt(job.trigger, previous, now);
     const state: JobState = {
       jobId: job.id,
+      generation: previous?.generation ?? 0,
       trigger: job.trigger,
       status: 'scheduled',
       attempts: previous?.attempts ?? 0,
@@ -138,19 +148,43 @@ export class RecoverableScheduler implements Scheduler {
         : { lastError: previous.lastError }),
     };
     await this.#stateStore.save(state);
-    this.#jobs.set(job.id, { job });
+    this.#jobs.set(job.id, { job, generation: state.generation });
     this.#arm(job.id, state);
   }
 
   async cancel(jobId: string): Promise<boolean> {
     const scheduled = this.#jobs.get(jobId);
+    const previous = await this.#stateStore.load(jobId);
+    if (scheduled === undefined && previous === undefined) return false;
+    const generation =
+      Math.max(scheduled?.generation ?? 0, previous?.generation ?? 0) + 1;
     if (scheduled !== undefined) {
+      scheduled.generation = generation;
       if (scheduled.timer !== undefined) clearTimeout(scheduled.timer);
       scheduled.controller?.abort();
-      this.#jobs.delete(jobId);
     }
-    const deleted = await this.#stateStore.delete(jobId);
-    return scheduled !== undefined || deleted;
+    const now = this.#timestamp();
+    const trigger = scheduled?.job.trigger ?? previous?.trigger;
+    if (trigger === undefined) return false;
+    await this.#stateStore.save({
+      jobId,
+      generation,
+      trigger,
+      status: 'canceled',
+      attempts: previous?.attempts ?? 0,
+      updatedAt: now,
+      ...(previous?.lastStartedAt === undefined
+        ? {}
+        : { lastStartedAt: previous.lastStartedAt }),
+      ...(previous?.lastCompletedAt === undefined
+        ? {}
+        : { lastCompletedAt: previous.lastCompletedAt }),
+      ...(previous?.lastError === undefined
+        ? {}
+        : { lastError: previous.lastError }),
+    });
+    this.#jobs.delete(jobId);
+    return true;
   }
 
   close(): void {
@@ -173,18 +207,25 @@ export class RecoverableScheduler implements Scheduler {
       return;
     }
     entry.timer = setTimeout(() => {
-      void this.#run(jobId).catch(() => undefined);
+      void this.#run(jobId, state.generation).catch(() => undefined);
     }, delay);
   }
 
-  async #run(jobId: string): Promise<void> {
+  async #run(jobId: string, generation: number): Promise<void> {
     const entry = this.#jobs.get(jobId);
-    if (entry === undefined || entry.controller !== undefined) return;
+    if (
+      entry === undefined ||
+      entry.generation !== generation ||
+      entry.controller !== undefined
+    ) {
+      return;
+    }
     const controller = new AbortController();
     entry.controller = controller;
     const startedAt = this.#timestamp();
     let state: JobState = {
       jobId,
+      generation,
       trigger: entry.job.trigger,
       status: 'running',
       attempts: 1,
@@ -193,8 +234,10 @@ export class RecoverableScheduler implements Scheduler {
     };
     try {
       const prior = await this.#stateStore.load(jobId);
+      if (!this.#isCurrent(jobId, entry, generation)) return;
       state = { ...state, attempts: (prior?.attempts ?? 0) + 1 };
       await this.#stateStore.save(state);
+      if (!this.#isCurrent(jobId, entry, generation)) return;
       if (entry.job.retry === undefined) {
         await entry.job.run(controller.signal);
       } else {
@@ -209,7 +252,9 @@ export class RecoverableScheduler implements Scheduler {
       }
       const completedAt = this.#timestamp();
       state = nextState(entry.job, state, completedAt, 'completed');
-      await this.#stateStore.save(state);
+      if (this.#isCurrent(jobId, entry, generation)) {
+        await this.#stateStore.save(state);
+      }
     } catch (error) {
       const failedAt = this.#timestamp();
       state = nextState(
@@ -219,6 +264,7 @@ export class RecoverableScheduler implements Scheduler {
         'failed',
         errorDetails(error),
       );
+      if (!this.#isCurrent(jobId, entry, generation)) return;
       try {
         await this.#stateStore.save(state);
       } catch (persistenceError) {
@@ -234,12 +280,22 @@ export class RecoverableScheduler implements Scheduler {
       await this.#onError(error, state);
     } finally {
       delete entry.controller;
-      if (entry.job.trigger.type === 'once') {
-        this.#jobs.delete(jobId);
-      } else {
-        this.#arm(jobId, state);
+      if (this.#isCurrent(jobId, entry, generation)) {
+        if (entry.job.trigger.type === 'once') {
+          this.#jobs.delete(jobId);
+        } else {
+          this.#arm(jobId, state);
+        }
       }
     }
+  }
+
+  #isCurrent(
+    jobId: string,
+    entry: { readonly job: ScheduledJob; readonly generation: number },
+    generation: number,
+  ): boolean {
+    return this.#jobs.get(jobId) === entry && entry.generation === generation;
   }
 
   #timestamp(): string {
@@ -326,6 +382,9 @@ function validateJobState(state: JobState): void {
   if (!Number.isSafeInteger(state.attempts) || state.attempts < 0) {
     throw new TypeError('Job state attempts are invalid');
   }
+  if (!Number.isSafeInteger(state.generation) || state.generation < 0) {
+    throw new TypeError('Job state generation is invalid');
+  }
   for (const value of [
     state.updatedAt,
     state.nextRunAt,
@@ -344,7 +403,11 @@ function parseJobState(value: unknown): JobState {
   }
   const state = value as JobState;
   validateJobState(state);
-  if (!['scheduled', 'running', 'completed', 'failed'].includes(state.status)) {
+  if (
+    !['scheduled', 'running', 'completed', 'failed', 'canceled'].includes(
+      state.status,
+    )
+  ) {
     throw new TypeError('Job state status is invalid');
   }
   return structuredClone(state);
@@ -374,6 +437,7 @@ export {
 export const schedulerCapabilities = [
   'durable-job-state',
   'interrupted-run-recovery',
+  'durable-cancellation-tombstones',
   'single-process-non-overlap',
   'explicit-retry-classification',
   'bounded-exponential-backoff',

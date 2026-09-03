@@ -76,6 +76,7 @@ describe('RecoverableScheduler', () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(await states.load('pregame')).toMatchObject({
       status: 'completed',
+      generation: 0,
       attempts: 1,
       lastStartedAt: '2026-09-02T12:00:00.000Z',
       lastCompletedAt: '2026-09-02T12:00:00.000Z',
@@ -87,6 +88,7 @@ describe('RecoverableScheduler', () => {
     const states = new StorageJobStateStore(new InMemoryStorageAdapter());
     await states.save({
       jobId: 'recovery',
+      generation: 0,
       trigger: { type: 'once', runAt: '2026-09-02T11:00:00.000Z' },
       status: 'running',
       attempts: 1,
@@ -110,6 +112,41 @@ describe('RecoverableScheduler', () => {
       attempts: 2,
     });
     scheduler.close();
+  });
+
+  it('keeps a durable tombstone when a canceled running job ignores abort', async () => {
+    const states = new StorageJobStateStore(new InMemoryStorageAdapter());
+    const scheduler = new RecoverableScheduler({ stateStore: states });
+    let finish: (() => void) | undefined;
+    const run = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const job = {
+      id: 'cancel-race',
+      name: 'Cancel race',
+      trigger: { type: 'once', runAt: '2026-09-02T12:00:00.000Z' } as const,
+      run,
+    };
+    await scheduler.schedule(job);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run).toHaveBeenCalledOnce();
+
+    expect(await scheduler.cancel(job.id)).toBe(true);
+    finish?.();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(await states.load(job.id)).toMatchObject({
+      status: 'canceled',
+      generation: 1,
+    });
+    const restarted = new RecoverableScheduler({ stateStore: states });
+    await restarted.schedule(job);
+    await vi.runAllTimersAsync();
+    expect(run).toHaveBeenCalledOnce();
+    restarted.close();
   });
 
   it('records terminal failure and reports it', async () => {

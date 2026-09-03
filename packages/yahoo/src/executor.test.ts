@@ -156,15 +156,10 @@ describe('YahooFantasyExecutor', () => {
           { status: 201 },
         ),
       );
-    let saves = 0;
     const journal: YahooExecutionJournal = {
       load: () => Promise.resolve(undefined),
-      save: () => {
-        saves += 1;
-        return saves === 1
-          ? Promise.resolve()
-          : Promise.reject(new Error('disk unavailable'));
-      },
+      preparePending: () => Promise.resolve('created'),
+      save: () => Promise.reject(new Error('disk unavailable')),
     };
     const executor = createExecutor(fetchMock, true, 'free-agent', journal);
     const action = addDropAction();
@@ -188,6 +183,11 @@ describe('YahooFantasyExecutor', () => {
     let record: Awaited<ReturnType<YahooExecutionJournal['load']>>;
     const journal: YahooExecutionJournal = {
       load: () => Promise.resolve(record),
+      preparePending: (next) => {
+        if (record !== undefined) return Promise.resolve('exists');
+        record = next;
+        return Promise.resolve('created');
+      },
       save: (next) => {
         record = next;
         return Promise.resolve();
@@ -240,6 +240,44 @@ describe('YahooFantasyExecutor', () => {
 
     expect(replay).toEqual(original);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('atomically allows only one executor process to perform a write', async () => {
+    const storage = new InMemoryStorageAdapter();
+    let releaseWrite: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseWrite = resolve;
+        }),
+    );
+    const action = addDropAction();
+    const first = createExecutor(
+      fetchMock,
+      true,
+      'free-agent',
+      new StorageYahooExecutionJournal({ storage }),
+    );
+    const second = createExecutor(
+      fetchMock,
+      true,
+      'free-agent',
+      new StorageYahooExecutionJournal({ storage }),
+    );
+    const firstExecute = first.execute([action], { mode: 'execute' });
+    const secondExecute = second.execute([action], { mode: 'execute' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    releaseWrite?.(new Response(undefined, { status: 201 }));
+
+    const results = await Promise.all([firstExecute, secondExecute]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(results.flat()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: 'executed' }),
+        expect.objectContaining({ status: 'execution-uncertain' }),
+      ]),
+    );
   });
 
   it('requires explicit evidence to reconcile an uncertain pending write', async () => {

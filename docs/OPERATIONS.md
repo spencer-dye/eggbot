@@ -6,7 +6,9 @@ Phase 11 supplies operational building blocks, not a prescribed hosting stack. A
 
 Compose the platform reader/executor, managers, `FileStorageAdapter`, `StorageAuditHistory`, `StorageYahooExecutionJournal`, and `RecoverableScheduler` in the application entry point. Place the storage directory and Yahoo token file on a persistent, backed-up volume outside the application image. Run under a dedicated unprivileged operating-system identity. The file adapter creates directories and files with owner-only modes, but deployment configuration must also restrict the parent volume and backup access.
 
-Register every scheduled job on each startup using stable job IDs and unchanged triggers. Functions are not persisted. A one-time job already marked `completed` will not run again; a job found in `running` state runs at least once after registration. Interval jobs continue from their persisted next-run time. Make every scheduled job idempotent and keep the platform action ID stable across recovery.
+Register every scheduled job on each startup using stable job IDs and unchanged triggers. Functions are not persisted. A one-time job already marked `completed` will not run again; a job found in `running` state runs at least once after registration. A canceled tombstone is not revived by startup registration. Interval jobs continue from their persisted next-run time. Make every scheduled job idempotent and keep the platform action ID stable across recovery.
+
+Derive a stable logical operation ID from the intended work, for example `lineup:{league}:{team}:{scoringPeriod}:{window}`. Give each at-least-once execution a separate attempt ID under that logical ID. Feed both to `AuditedOperationRunner`, and derive host action IDs deterministically from the same logical operation when retrying the same intended mutation. Do not let a recovered scheduler invocation create unrelated UUID identities for semantically identical work.
 
 The included scheduler prevents overlap within one process only. A deployment with multiple replicas must use exactly one active scheduler, external leader election, or a scheduler implementation backed by a distributed lease. Shared filesystems do not turn the in-process lock into a distributed lock.
 
@@ -16,7 +18,7 @@ Startup order:
 
 1. Load and validate configuration without logging secrets.
 2. Open durable storage and verify a write/read/delete health probe under a dedicated health prefix.
-3. Construct token storage, the Yahoo execution journal, audit history, platform clients, and managers.
+3. Construct token storage, the Yahoo execution journal, audit history, audited operation runner, platform clients, and managers.
 4. Reconcile any durable Yahoo journal entries left `pending`; do not schedule new mutations for the same team until they are resolved.
 5. Reconcile submitted waiver claims whose provider outcome is still pending.
 6. Register stable scheduled jobs and begin accepting work.
@@ -53,7 +55,7 @@ Run `WaiverReconciler` with a transaction-history limit large enough to include 
 
 ## Audit history
 
-Append one immutable event for each completed manager run, scheduler failure, reconciliation attempt, configuration change, and operator intervention. Useful subject IDs include manager run IDs, action IDs, and stable job IDs. Preserve the original workflow run as a redacted JSON payload or an application-defined normalized summary.
+Wrap manager invocations in `AuditedOperationRunner`. It refuses to invoke the manager unless the start event is durable. If the manager completes but the terminal audit event fails, it throws `OperationalAuditError` with `operationCompleted: true` and the returned result so the application can stop further mutation, alert, and repair the missing record without guessing whether execution occurred. Append immutable events for scheduler failures, reconciliation attempts, configuration changes, and operator interventions as well. Useful subject IDs include logical operation IDs, manager run IDs, action IDs, and stable job IDs. Preserve the original workflow run as a redacted JSON payload or an application-defined normalized summary.
 
 Never persist access tokens, refresh tokens, client secrets, raw authorization headers, or unreviewed model prompts/responses in audit payloads. Define retention and deletion policies appropriate to the deployment, monitor volume capacity, and test backup restoration. `StorageAuditHistory` is append-only by contract, but administrators can still remove underlying files; protect the storage boundary with operating-system and backup controls.
 

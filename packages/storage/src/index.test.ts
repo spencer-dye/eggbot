@@ -5,11 +5,16 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  AuditedOperationRunner,
   FileStorageAdapter,
   InMemoryStorageAdapter,
   StorageAuditHistory,
 } from './index.js';
-import type { StorageValidationError } from './index.js';
+import type {
+  AuditHistory,
+  OperationalAuditError,
+  StorageValidationError,
+} from './index.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -140,6 +145,63 @@ describe('StorageAuditHistory', () => {
         payload: null,
       }),
     ).rejects.toThrow('already exists');
+  });
+});
+
+describe('AuditedOperationRunner', () => {
+  it('durably brackets an operation with pending and terminal events', async () => {
+    const history = new StorageAuditHistory(new InMemoryStorageAdapter());
+    const runner = new AuditedOperationRunner({
+      history,
+      clock: () => new Date('2026-09-02T12:00:00.000Z'),
+    });
+
+    const result = await runner.run({
+      operationId: 'lineup:league:team:week-1',
+      attemptId: 'lineup:league:team:week-1:attempt-1',
+      category: 'lineup-run',
+      subjectId: 'league:team',
+      run: () => Promise.resolve({ status: 'dry-run' }),
+      serializeResult: (value) => value,
+      classifyOutcome: () => 'dry-run',
+    });
+
+    expect(result).toEqual({ status: 'dry-run' });
+    expect(await history.list()).toMatchObject([
+      { outcome: 'pending' },
+      { outcome: 'dry-run' },
+    ]);
+  });
+
+  it('reports a completed operation whose terminal audit write failed', async () => {
+    let appends = 0;
+    const history: AuditHistory = {
+      append: () => {
+        appends += 1;
+        return appends === 1
+          ? Promise.resolve()
+          : Promise.reject(new Error('audit disk unavailable'));
+      },
+      get: () => Promise.resolve(undefined),
+      list: () => Promise.resolve([]),
+    };
+    const runner = new AuditedOperationRunner({ history });
+
+    await expect(
+      runner.run({
+        operationId: 'waiver:league:team:week-1',
+        attemptId: 'waiver:league:team:week-1:attempt-1',
+        category: 'waiver-run',
+        subjectId: 'league:team',
+        run: () => Promise.resolve({ status: 'submitted' }),
+        serializeResult: (value) => value,
+        classifyOutcome: () => 'pending',
+      }),
+    ).rejects.toMatchObject({
+      stage: 'terminal-after-success',
+      operationCompleted: true,
+      operationResult: { status: 'submitted' },
+    } satisfies Partial<OperationalAuditError>);
   });
 });
 

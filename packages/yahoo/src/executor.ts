@@ -54,9 +54,22 @@ export type YahooExecutionRecord =
       readonly result: FailedResult;
     });
 
+export type YahooPendingExecutionRecord = Extract<
+  YahooExecutionRecord,
+  { state: 'pending' }
+>;
+export type YahooTerminalExecutionRecord = Exclude<
+  YahooExecutionRecord,
+  YahooPendingExecutionRecord
+>;
+
 export interface YahooExecutionJournal {
   load(actionId: ActionId): Promise<YahooExecutionRecord | undefined>;
-  save(record: YahooExecutionRecord): Promise<void>;
+  /** Atomically claims an action ID before any provider mutation. */
+  preparePending(
+    record: YahooPendingExecutionRecord,
+  ): Promise<'created' | 'exists'>;
+  save(record: YahooTerminalExecutionRecord): Promise<void>;
 }
 
 export interface StorageYahooExecutionJournalOptions {
@@ -87,21 +100,37 @@ export class StorageYahooExecutionJournal implements YahooExecutionJournal {
       : parseStoredExecutionRecord(record.value, actionId);
   }
 
-  save(record: YahooExecutionRecord): Promise<void> {
+  async preparePending(
+    record: YahooPendingExecutionRecord,
+  ): Promise<'created' | 'exists'> {
     validateExecutionRecord(record);
-    const now = this.#clock();
-    if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
-      throw new TypeError('Execution journal clock returned an invalid date');
-    }
+    const created = await this.#storage.create({
+      key: this.#key(record.actionId),
+      updatedAt: this.#timestamp(),
+      value: JSON.parse(JSON.stringify(record)) as JsonValue,
+    });
+    return created ? 'created' : 'exists';
+  }
+
+  save(record: YahooTerminalExecutionRecord): Promise<void> {
+    validateExecutionRecord(record);
     return this.#storage.put({
       key: this.#key(record.actionId),
-      updatedAt: now.toISOString(),
+      updatedAt: this.#timestamp(),
       value: JSON.parse(JSON.stringify(record)) as JsonValue,
     });
   }
 
   #key(id: ActionId): string {
     return `${this.#keyPrefix}${encodeURIComponent(id)}`;
+  }
+
+  #timestamp(): string {
+    const now = this.#clock();
+    if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+      throw new TypeError('Execution journal clock returned an invalid date');
+    }
+    return now.toISOString();
   }
 }
 
@@ -125,7 +154,15 @@ export class InMemoryYahooExecutionJournal implements YahooExecutionJournal {
     return Promise.resolve(this.#records.get(actionId));
   }
 
-  save(record: YahooExecutionRecord): Promise<void> {
+  preparePending(
+    record: YahooPendingExecutionRecord,
+  ): Promise<'created' | 'exists'> {
+    if (this.#records.has(record.actionId)) return Promise.resolve('exists');
+    this.#records.set(record.actionId, record);
+    return Promise.resolve('created');
+  }
+
+  save(record: YahooTerminalExecutionRecord): Promise<void> {
     this.#records.set(record.actionId, record);
     return Promise.resolve();
   }
@@ -326,8 +363,9 @@ export class YahooFantasyExecutor implements FantasyPlatformExecutor {
       this.#availability,
     );
 
+    let preparation: 'created' | 'exists';
     try {
-      await this.#journal.save({
+      preparation = await this.#journal.preparePending({
         state: 'pending',
         actionId: request.action.id,
         fingerprint,
@@ -340,6 +378,29 @@ export class YahooFantasyExecutor implements FantasyPlatformExecutor {
           actionId: request.action.id,
           cause: error,
         },
+      );
+    }
+
+    if (preparation === 'exists') {
+      const concurrent = await this.#journal.load(request.action.id);
+      if (concurrent === undefined) {
+        throw new YahooActionValidationError(
+          'Execution journal reported an existing intent that could not be loaded',
+          {
+            code: 'JOURNAL_CONTRACT_VIOLATION',
+            actionId: request.action.id,
+          },
+        );
+      }
+      if (concurrent.fingerprint !== fingerprint) {
+        throw idempotencyConflict(request.action);
+      }
+      if (concurrent.state !== 'pending') return concurrent.result;
+      return this.#poison(
+        request.action,
+        fingerprint,
+        'JOURNAL_OUTCOME_PENDING',
+        'Another executor claimed this action; reconcile with Yahoo before retrying',
       );
     }
 

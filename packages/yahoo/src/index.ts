@@ -23,6 +23,8 @@ export {
   type YahooExecutionJournal,
   type YahooExecutionReconciliation,
   type YahooExecutionRecord,
+  type YahooPendingExecutionRecord,
+  type YahooTerminalExecutionRecord,
   type YahooFantasyExecutorOptions,
   type StorageYahooExecutionJournalOptions,
 } from './executor.js';
