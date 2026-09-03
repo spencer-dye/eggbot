@@ -36,7 +36,7 @@ pnpm cli yahoo manage-waivers 449.l.1234 449.l.1234.t.1 3 \
   --max-waiver-bid 10 --max-waiver-priority 4
 ```
 
-Use `--waivers-only` to exclude immediate free agents and `--max-actions` to allow a ranked claim batch. The manager rejects the whole ranked plan if any action fails policy and submits claims in deterministic rank order without claiming that this controls provider resolution order. Successful free-agent actions are verified through a roster re-read, while waiver claims remain explicitly pending.
+Use `--waivers-only` to exclude immediate free agents and `--max-actions` to allow a ranked claim batch. The manager rejects the whole ranked plan if any action fails policy and submits claims in deterministic rank order without claiming that this controls provider resolution order. Successful free-agent actions are verified together against one final roster re-read, while waiver claims remain explicitly pending. CLI output reports execution `status` separately from aggregate `resolutionStatus`; inspect both because executor success does not prove roster verification.
 
 Yahoo commands read `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, and optionally `YAHOO_REDIRECT_URI` (default `oob`). Initial tokens can be supplied through `YAHOO_ACCESS_TOKEN`, `YAHOO_REFRESH_TOKEN`, and `YAHOO_TOKEN_EXPIRES_AT` as epoch milliseconds or an ISO timestamp.
 

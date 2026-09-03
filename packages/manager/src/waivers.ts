@@ -112,8 +112,25 @@ export type ImmediateAcquisitionVerification =
     }
   | {
       readonly status: 'failed';
-      readonly error: { readonly code: string; readonly message: string };
+      readonly error: {
+        readonly code: string;
+        readonly message: string;
+        readonly causeCode?: string;
+        readonly retryable?: boolean;
+        readonly providerStatus?: number;
+      };
     };
+
+export type AcquisitionResolutionStatus =
+  | 'not-applicable'
+  | 'not-attempted'
+  | 'pending'
+  | 'verified'
+  | 'verified-and-pending'
+  | 'mismatch'
+  | 'mismatch-and-pending'
+  | 'failed'
+  | 'failed-and-pending';
 
 export type AcquisitionResolution =
   | {
@@ -142,6 +159,8 @@ export interface WaiverManagementRun {
   readonly preflightResults: readonly ActionResult[];
   readonly executionResults: readonly ActionResult[];
   readonly resolutions: readonly AcquisitionResolution[];
+  /** Aggregate resolution evidence; `status` describes execution only. */
+  readonly resolutionStatus: AcquisitionResolutionStatus;
 }
 
 export class WaiverManagementError extends Error {
@@ -387,6 +406,7 @@ export class AutonomousWaiverManager {
       preflightResults,
       executionResults,
       resolutions,
+      resolutionStatus: summarizeResolutions(resolutions),
     });
   }
 
@@ -461,6 +481,7 @@ export class AutonomousWaiverManager {
         }),
       );
     } catch (error) {
+      const details = verificationError(error);
       immediateResolutions = new Map(
         immediate.map((result) => [
           result.action.id,
@@ -471,10 +492,16 @@ export class AutonomousWaiverManager {
               status: 'failed' as const,
               error: {
                 code: 'ROSTER_VERIFICATION_FAILED',
-                message:
-                  error instanceof Error
-                    ? error.message
-                    : 'Unexpected roster verification failure',
+                message: details.message,
+                ...(details.causeCode === undefined
+                  ? {}
+                  : { causeCode: details.causeCode }),
+                ...(details.retryable === undefined
+                  ? {}
+                  : { retryable: details.retryable }),
+                ...(details.providerStatus === undefined
+                  ? {}
+                  : { providerStatus: details.providerStatus }),
               },
             },
           },
@@ -532,6 +559,7 @@ export class AutonomousWaiverManager {
     readonly preflightResults?: readonly ActionResult[];
     readonly executionResults?: readonly ActionResult[];
     readonly resolutions?: readonly AcquisitionResolution[];
+    readonly resolutionStatus?: AcquisitionResolutionStatus;
   }): WaiverManagementRun {
     const completedAt = this.#timestamp('completedAt');
     if (Date.parse(completedAt) < Date.parse(input.startedAt)) {
@@ -557,6 +585,8 @@ export class AutonomousWaiverManager {
       preflightResults: input.preflightResults ?? [],
       executionResults: input.executionResults ?? [],
       resolutions: input.resolutions ?? [],
+      resolutionStatus:
+        input.resolutionStatus ?? defaultResolutionStatus(input.status),
     };
   }
 
@@ -675,6 +705,69 @@ function acquisitionVerificationIssues(
     });
   }
   return issues;
+}
+
+function summarizeResolutions(
+  resolutions: readonly AcquisitionResolution[],
+): AcquisitionResolutionStatus {
+  const immediate = resolutions.filter(
+    (
+      resolution,
+    ): resolution is Extract<AcquisitionResolution, { kind: 'immediate' }> =>
+      resolution.kind === 'immediate',
+  );
+  const pending = resolutions.some(
+    (resolution) => resolution.kind === 'pending-waiver',
+  );
+  if (immediate.some(({ verification }) => verification.status === 'failed'))
+    return pending ? 'failed-and-pending' : 'failed';
+  if (
+    immediate.some(({ verification }) => verification.status === 'mismatch')
+  ) {
+    return pending ? 'mismatch-and-pending' : 'mismatch';
+  }
+  if (immediate.length > 0 && pending) return 'verified-and-pending';
+  if (immediate.length > 0) return 'verified';
+  return pending ? 'pending' : 'not-attempted';
+}
+
+function defaultResolutionStatus(
+  status: WaiverManagementStatus,
+): AcquisitionResolutionStatus {
+  return status === 'no-action' || status === 'rejected' || status === 'dry-run'
+    ? 'not-applicable'
+    : 'not-attempted';
+}
+
+function verificationError(error: unknown): {
+  readonly message: string;
+  readonly causeCode?: string;
+  readonly retryable?: boolean;
+  readonly providerStatus?: number;
+} {
+  const record =
+    typeof error === 'object' && error !== null
+      ? (error as Record<string, unknown>)
+      : undefined;
+  const causeCode =
+    typeof record?.code === 'string' && record.code.length > 0
+      ? record.code
+      : undefined;
+  const retryable =
+    typeof record?.retryable === 'boolean' ? record.retryable : undefined;
+  const providerStatus =
+    typeof record?.status === 'number' && Number.isSafeInteger(record.status)
+      ? record.status
+      : undefined;
+  return {
+    message:
+      error instanceof Error
+        ? error.message
+        : 'Unexpected roster verification failure',
+    ...(causeCode === undefined ? {} : { causeCode }),
+    ...(retryable === undefined ? {} : { retryable }),
+    ...(providerStatus === undefined ? {} : { providerStatus }),
+  };
 }
 
 function waiverExecutionStatus(

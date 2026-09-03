@@ -43,6 +43,7 @@ describe('AutonomousWaiverManager', () => {
     });
     expect(result.preflightResults[0]?.status).toBe('dry-run');
     expect(result.executionResults).toEqual([]);
+    expect(result.resolutionStatus).toBe('not-applicable');
     expect(executor.execute).toHaveBeenCalledTimes(1);
   });
 
@@ -54,6 +55,7 @@ describe('AutonomousWaiverManager', () => {
     expect(result.resolutions).toEqual([
       { actionId: actionId('action'), kind: 'pending-waiver' },
     ]);
+    expect(result.resolutionStatus).toBe('pending');
     expect(executor.execute).toHaveBeenNthCalledWith(
       1,
       result.policyApproval?.actions,
@@ -92,6 +94,7 @@ describe('AutonomousWaiverManager', () => {
     }).run(options('execute'));
 
     expect(result.status).toBe('executed');
+    expect(result.resolutionStatus).toBe('verified');
     expect(result.resolutions).toEqual([
       {
         actionId: actionId('action'),
@@ -136,6 +139,7 @@ describe('AutonomousWaiverManager', () => {
     }).run(options('execute'));
 
     expect(result.status).toBe('executed-and-submitted');
+    expect(result.resolutionStatus).toBe('verified-and-pending');
     expect(result.resolutions).toEqual([
       {
         actionId: actionId('action'),
@@ -148,6 +152,30 @@ describe('AutonomousWaiverManager', () => {
       },
       { actionId: actionId('action-1'), kind: 'pending-waiver' },
     ]);
+
+    const mismatch = await manager(executorReturning('executed'), {
+      snapshot: sourceSnapshot,
+      rosterReader: {
+        getRoster: () => Promise.resolve(sourceSnapshot.teams[0]!.roster),
+      },
+      decisionEngine: engineReturning([
+        {
+          type: 'add-player',
+          leagueId: league,
+          teamId: team,
+          playerId: freeAgent.id,
+        },
+        {
+          type: 'waiver-claim',
+          leagueId: league,
+          teamId: team,
+          addPlayerId: waiver.id,
+          bid: 3,
+        },
+      ]),
+    }).run(options('execute'));
+
+    expect(mismatch.resolutionStatus).toBe('mismatch-and-pending');
   });
 
   it('records immediate roster mismatches and read failures per action', async () => {
@@ -168,7 +196,14 @@ describe('AutonomousWaiverManager', () => {
     const failed = await manager(executorReturning('executed'), {
       snapshot: sourceSnapshot,
       rosterReader: {
-        getRoster: () => Promise.reject(new Error('Yahoo roster read failed')),
+        getRoster: () =>
+          Promise.reject(
+            Object.assign(new Error('Yahoo roster read failed'), {
+              code: 'YAHOO_HTTP_ERROR',
+              status: 503,
+              retryable: true,
+            }),
+          ),
       },
       decisionEngine: engineReturning([action]),
     }).run(options('execute'));
@@ -180,6 +215,8 @@ describe('AutonomousWaiverManager', () => {
         issues: [{ code: 'ADDED_PLAYER_MISSING', playerId: freeAgent.id }],
       },
     });
+    expect(mismatch.status).toBe('executed');
+    expect(mismatch.resolutionStatus).toBe('mismatch');
     expect(failed.resolutions[0]).toEqual({
       actionId: actionId('action'),
       kind: 'immediate',
@@ -188,9 +225,14 @@ describe('AutonomousWaiverManager', () => {
         error: {
           code: 'ROSTER_VERIFICATION_FAILED',
           message: 'Yahoo roster read failed',
+          causeCode: 'YAHOO_HTTP_ERROR',
+          providerStatus: 503,
+          retryable: true,
         },
       },
     });
+    expect(failed.status).toBe('executed');
+    expect(failed.resolutionStatus).toBe('failed');
   });
 
   it('does not submit when platform preflight fails', async () => {
@@ -211,6 +253,7 @@ describe('AutonomousWaiverManager', () => {
 
     expect(result.status).toBe('preflight-failed');
     expect(result.executionResults).toEqual([]);
+    expect(result.resolutionStatus).toBe('not-attempted');
     expect(execute).toHaveBeenCalledTimes(1);
   });
 });
