@@ -1,16 +1,25 @@
 {
   "name": "eggbot",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "A modular framework for autonomous fantasy football management",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spencer-dye/eggbot.git"
+  },
+  "homepage": "https://github.com/spencer-dye/eggbot#readme",
+  "bugs": {
+    "url": "https://github.com/spencer-dye/eggbot/issues"
+  },
   "packageManager": "pnpm@10.30.3",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "pnpm --recursive --sort --if-present run build",
-    "typecheck": "pnpm --recursive --sort --if-present run typecheck",
+    "typecheck": "pnpm --recursive --sort --if-present run typecheck && pnpm typecheck:tests",
+    "typecheck:tests": "tsc --project tsconfig.tests.json --noEmit --composite false",
     "test": "vitest run",
     "test:integration": "vitest run packages/yahoo/src/adapter.integration.test.ts",
     "lint": "eslint .",

@@ -13,6 +13,7 @@ import { InMemoryStorageAdapter } from '@eggbot/storage';
 
 import type { YahooPlayerAvailability } from './availability.js';
 import {
+  InMemoryYahooExecutionJournal,
   YahooFantasyExecutor,
   StorageYahooExecutionJournal,
   type YahooExecutionJournal,
@@ -52,6 +53,23 @@ const league: League = {
 };
 
 describe('YahooFantasyExecutor', () => {
+  it('isolates in-memory journal records from caller mutation', async () => {
+    const journal = new InMemoryYahooExecutionJournal();
+    const pending = {
+      actionId: actionId('journal-action'),
+      fingerprint: 'fingerprint',
+      state: 'pending' as const,
+    };
+
+    await journal.preparePending(pending);
+    const loaded = await journal.load(pending.actionId);
+    expect(loaded).toEqual(pending);
+    if (loaded !== undefined) {
+      (loaded as { fingerprint: string }).fingerprint = 'mutated';
+    }
+    expect(await journal.load(pending.actionId)).toEqual(pending);
+  });
+
   it('validates and previews without issuing a write', async () => {
     const fetchMock = vi.fn<typeof fetch>();
     const executor = createExecutor(fetchMock, false);

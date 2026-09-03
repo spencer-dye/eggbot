@@ -1,8 +1,12 @@
 {
   "name": "@eggbot/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "description": "Credential-conscious development CLI and composition smoke test for EggBot",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -b",

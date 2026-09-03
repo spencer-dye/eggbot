@@ -15,10 +15,10 @@ export {
   type TradeValueHorizon,
 } from './types.js';
 
-export const tradeCapabilities = [
+export const tradeCapabilities = Object.freeze([
   'evaluation-only',
   'explicit-player-transfers',
   'horizon-bound-valuations',
   'coverage-aware-value-deltas',
   'roster-capacity-effects',
-] as const;
+] as const);

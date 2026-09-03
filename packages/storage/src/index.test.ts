@@ -11,6 +11,7 @@ import {
   StorageAuditHistory,
 } from './index.js';
 import type {
+  AuditHistoryError,
   AuditHistory,
   OperationalAuditError,
   StorageValidationError,
@@ -144,7 +145,11 @@ describe('StorageAuditHistory', () => {
         outcome: 'failed',
         payload: null,
       }),
-    ).rejects.toThrow('already exists');
+    ).rejects.toMatchObject({
+      name: 'AuditHistoryError',
+      code: 'DUPLICATE_AUDIT_EVENT',
+      eventId: 'event-1',
+    } satisfies Partial<AuditHistoryError>);
   });
 });
 

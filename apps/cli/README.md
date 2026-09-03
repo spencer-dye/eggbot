@@ -1,6 +1,6 @@
 # `@eggbot/cli`
 
-The default `pnpm cli` command is a credential-free composition smoke test. It reports the safe local decision, policy, manager, football-data, evaluation-only trade, durable storage, and recoverable scheduling capabilities through Phase 11 without invoking any platform, model, or football-data provider. Phase 1 also provides manual Yahoo read commands:
+The default `pnpm cli` command is a credential-free composition smoke test. It reports the safe local decision, policy, manager, football-data, evaluation-only trade, durable storage, and recoverable scheduling capabilities without invoking any platform, model, or football-data provider. Manual Yahoo read commands are also available:
 
 ```sh
 pnpm cli yahoo help
@@ -19,7 +19,7 @@ pnpm cli yahoo transactions 449.l.1234 --limit 10
 pnpm cli yahoo snapshot 449.l.1234 3 --free-agent-limit 50 --waiver-limit 50
 ```
 
-Phase 7 can run the complete autonomous lineup workflow from a caller-supplied projection JSON file. It defaults to Yahoo's non-mutating local dry run and requires complete projection coverage for movable roster players:
+The CLI can run the complete autonomous lineup workflow from a caller-supplied projection JSON file. It defaults to Yahoo's non-mutating local dry run and requires complete projection coverage for movable roster players:
 
 ```sh
 pnpm cli yahoo manage-lineup 449.l.1234 449.l.1234.t.1 3 \
@@ -28,7 +28,7 @@ pnpm cli yahoo manage-lineup 449.l.1234 449.l.1234.t.1 3 \
 
 The projection file contains `scoringPeriod`, `observedAt`, `source`, optional `version`, and a `players` array of `{ playerId, points, floor?, ceiling? }`. Snapshot age defaults to five minutes and projection age to thirty minutes; both are configurable with explicit millisecond options. Add `--execute` only after reviewing dry-run output. Execute mode repeats platform dry-run preflight, rechecks freshness, performs the mutation, and reports the subsequent Yahoo lineup read as verified, mismatched, or failed.
 
-Phase 8 uses the same projection envelope for ranked free-agent and waiver upgrades. It defaults to one action, a one-point minimum projected gain, and dry-run mode. Budget leagues require an explicit fixed or percentage strategy; priority leagues omit bids:
+Waiver management uses the same projection envelope for ranked free-agent and waiver upgrades. It defaults to one action, a one-point minimum projected gain, and dry-run mode. Budget leagues require an explicit fixed or percentage strategy; priority leagues omit bids:
 
 ```sh
 pnpm cli yahoo manage-waivers 449.l.1234 449.l.1234.t.1 3 \
@@ -42,7 +42,7 @@ Yahoo commands read `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, and optionally `YA
 
 Newly exchanged and refreshed tokens are saved to `.eggbot/yahoo-tokens.json` with owner-only permissions. Override the location with `YAHOO_TOKEN_FILE`. Normal output redacts access and refresh tokens; `yahoo exchange` reveals them only with the explicit `--show-secrets` flag.
 
-Phase 2 write commands produce the exact request preview without credentials by default:
+Direct write commands produce the exact request preview without credentials by default:
 
 ```sh
 pnpm cli yahoo lineup-change 449.l.1234 449.l.1234.t.1 3 449.p.10=QB,449.p.20=RB

@@ -194,8 +194,13 @@ export async function runDecisionEngine(
   );
   const proposedActions = assignActionIds(proposal, options.actionIdFactory);
   const completedAt = completed.toISOString();
+  const engineDescriptor: DecisionEngineDescriptor = Object.freeze({
+    id: engine.id,
+    version: engine.version,
+    kind: engine.kind,
+  });
   return {
-    engine: { id: engine.id, version: engine.version, kind: engine.kind },
+    engine: engineDescriptor,
     sourceSnapshotId: validatedContext.snapshot.id,
     snapshot: validatedContext.snapshot,
     managedTeamId: validatedContext.managedTeamId,

@@ -26,5 +26,15 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
     },
   },
+  {
+    files: ['packages/**/*.test.ts', 'apps/**/*.test.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: ['./tsconfig.tests.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
   eslintConfigPrettier,
 );

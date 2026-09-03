@@ -17,7 +17,7 @@ const oauthConfigSchema = z.object({
 
 const tokenResponseSchema = z.object({
   access_token: z.string().min(1),
-  expires_in: z.coerce.number().positive(),
+  expires_in: z.coerce.number().finite().positive(),
   refresh_token: z.string().min(1).optional(),
   token_type: z.string().min(1),
 });
@@ -71,7 +71,17 @@ export class YahooOAuthClient {
   #refreshPromise: Promise<YahooTokenSet> | undefined;
 
   constructor(options: YahooOAuthClientOptions) {
-    this.#config = oauthConfigSchema.parse(options.config);
+    const config = oauthConfigSchema.safeParse(options.config);
+    if (!config.success) {
+      throw new YahooAuthenticationError(
+        'Yahoo OAuth configuration is invalid',
+        {
+          code: 'INVALID_OAUTH_CONFIGURATION',
+          cause: config.error,
+        },
+      );
+    }
+    this.#config = config.data;
     this.#tokens =
       options.tokens === undefined
         ? undefined
@@ -81,9 +91,20 @@ export class YahooOAuthClient {
     this.#now = options.now ?? Date.now;
     this.#refreshLeewayMs =
       options.refreshLeewayMs ?? DEFAULT_REFRESH_LEEWAY_MS;
-    this.#authorizationUrl =
-      options.authorizationUrl ?? DEFAULT_AUTHORIZATION_URL;
-    this.#tokenUrl = options.tokenUrl ?? DEFAULT_TOKEN_URL;
+    if (!Number.isFinite(this.#refreshLeewayMs) || this.#refreshLeewayMs < 0) {
+      throw new YahooAuthenticationError(
+        'Yahoo OAuth refresh leeway must be a finite non-negative number',
+        { code: 'INVALID_REFRESH_LEEWAY' },
+      );
+    }
+    this.#authorizationUrl = validateEndpoint(
+      options.authorizationUrl ?? DEFAULT_AUTHORIZATION_URL,
+      'authorization',
+    );
+    this.#tokenUrl = validateEndpoint(
+      options.tokenUrl ?? DEFAULT_TOKEN_URL,
+      'token',
+    );
     this.#didLoadStore = options.tokens !== undefined;
   }
 
@@ -126,7 +147,7 @@ export class YahooOAuthClient {
     if (
       !forceRefresh &&
       tokens !== undefined &&
-      tokens.expiresAt > this.#now() + this.#refreshLeewayMs
+      tokens.expiresAt > this.#timestamp() + this.#refreshLeewayMs
     ) {
       return tokens.accessToken;
     }
@@ -237,14 +258,31 @@ export class YahooOAuthClient {
       );
     }
 
+    const expiresAt = this.#timestamp() + parsed.data.expires_in * 1_000;
+    if (!Number.isFinite(expiresAt)) {
+      throw new YahooAuthenticationError(
+        'Yahoo returned an invalid token expiration',
+        { code: 'INVALID_TOKEN_RESPONSE', status: response.status },
+      );
+    }
     return {
       accessToken: parsed.data.access_token,
       tokenType: parsed.data.token_type,
-      expiresAt: this.#now() + parsed.data.expires_in * 1_000,
+      expiresAt,
       ...(parsed.data.refresh_token === undefined
         ? {}
         : { refreshToken: parsed.data.refresh_token }),
     };
+  }
+
+  #timestamp(): number {
+    const value = this.#now();
+    if (!Number.isFinite(value)) {
+      throw new YahooAuthenticationError('Yahoo OAuth clock is invalid', {
+        code: 'INVALID_CLOCK_VALUE',
+      });
+    }
+    return value;
   }
 }
 
@@ -267,6 +305,21 @@ async function readJson(response: Response): Promise<unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateEndpoint(value: string, resource: string): string {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      throw new TypeError('Unsupported OAuth endpoint protocol');
+    }
+    return url.toString();
+  } catch (cause) {
+    throw new YahooAuthenticationError(
+      `Yahoo OAuth ${resource} endpoint is invalid`,
+      { code: 'INVALID_OAUTH_ENDPOINT', cause },
+    );
+  }
 }
 
 function validateTokenSet(value: unknown): YahooTokenSet {

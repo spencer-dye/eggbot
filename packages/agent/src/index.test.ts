@@ -312,6 +312,7 @@ describe('runDecisionEngine', () => {
         ],
       },
     });
+    expect(Object.isFrozen(result.engine)).toBe(true);
   });
 
   it('propagates engine failures without converting them to validation errors', async () => {

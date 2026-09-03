@@ -1,8 +1,10 @@
 {
   "name": "@eggbot/storage",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
+  "description": "Provider-neutral storage, audit, and single-host durability primitives for EggBot",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,6 +17,21 @@
     "dist",
     "README.md"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spencer-dye/eggbot.git",
+    "directory": "packages/storage"
+  },
+  "homepage": "https://github.com/spencer-dye/eggbot#readme",
+  "bugs": {
+    "url": "https://github.com/spencer-dye/eggbot/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit --composite false"

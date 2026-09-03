@@ -13,6 +13,39 @@ const config = {
 };
 
 describe('YahooOAuthClient', () => {
+  it('normalizes invalid OAuth configuration and clock options', async () => {
+    expect(
+      captureError(
+        () =>
+          new YahooOAuthClient({
+            config: { ...config, clientSecret: '' },
+          }),
+      ),
+    ).toMatchObject({ code: 'INVALID_OAUTH_CONFIGURATION' });
+    expect(
+      captureError(() => new YahooOAuthClient({ config, refreshLeewayMs: -1 })),
+    ).toMatchObject({ code: 'INVALID_REFRESH_LEEWAY' });
+    expect(
+      captureError(
+        () => new YahooOAuthClient({ config, authorizationUrl: 'file:///tmp' }),
+      ),
+    ).toMatchObject({ code: 'INVALID_OAUTH_ENDPOINT' });
+
+    const client = new YahooOAuthClient({
+      config,
+      now: () => Number.NaN,
+      tokens: {
+        accessToken: 'access',
+        refreshToken: 'refresh',
+        tokenType: 'bearer',
+        expiresAt: 10,
+      },
+    });
+    await expect(client.getAccessToken()).rejects.toMatchObject({
+      code: 'INVALID_CLOCK_VALUE',
+    });
+  });
+
   it('creates an authorization URL without exposing the client secret', () => {
     const client = new YahooOAuthClient({ config });
     const url = client.createAuthorizationUrl({ state: 'csrf-token' });
@@ -67,6 +100,25 @@ describe('YahooOAuthClient', () => {
     expect(request?.[1]?.headers).toMatchObject({
       authorization: 'Basic Y2xpZW50LWlkOmNsaWVudC1zZWNyZXQ=',
     });
+  });
+
+  it('rejects a token expiration that overflows epoch milliseconds', async () => {
+    const client = new YahooOAuthClient({
+      config,
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        jsonResponse({
+          access_token: 'access',
+          refresh_token: 'refresh',
+          expires_in: Number.MAX_VALUE,
+          token_type: 'bearer',
+        }),
+      ),
+      now: () => 1_000,
+    });
+
+    await expect(
+      client.exchangeAuthorizationCode('authorization-code'),
+    ).rejects.toMatchObject({ code: 'INVALID_TOKEN_RESPONSE' });
   });
 
   it('refreshes an expired token and persists a rotated refresh token', async () => {
@@ -147,4 +199,13 @@ function requestUrl(input: string | URL | Request | undefined): string {
 
 function requestBody(body: BodyInit | null | undefined): string {
   return body instanceof URLSearchParams ? body.toString() : '';
+}
+
+function captureError(operation: () => unknown): unknown {
+  try {
+    operation();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
 }

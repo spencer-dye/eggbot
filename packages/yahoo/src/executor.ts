@@ -151,19 +151,24 @@ export class InMemoryYahooExecutionJournal implements YahooExecutionJournal {
   readonly #records = new Map<ActionId, YahooExecutionRecord>();
 
   load(actionId: ActionId): Promise<YahooExecutionRecord | undefined> {
-    return Promise.resolve(this.#records.get(actionId));
+    const record = this.#records.get(actionId);
+    return Promise.resolve(
+      record === undefined ? undefined : structuredClone(record),
+    );
   }
 
   preparePending(
     record: YahooPendingExecutionRecord,
   ): Promise<'created' | 'exists'> {
+    validateExecutionRecord(record);
     if (this.#records.has(record.actionId)) return Promise.resolve('exists');
-    this.#records.set(record.actionId, record);
+    this.#records.set(record.actionId, structuredClone(record));
     return Promise.resolve('created');
   }
 
   save(record: YahooTerminalExecutionRecord): Promise<void> {
-    this.#records.set(record.actionId, record);
+    validateExecutionRecord(record);
+    this.#records.set(record.actionId, structuredClone(record));
     return Promise.resolve();
   }
 }

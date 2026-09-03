@@ -30,6 +30,24 @@ export interface Scheduler {
   cancel(jobId: string): Promise<boolean>;
 }
 
+export class SchedulerConflictError extends Error {
+  readonly code: 'JOB_ALREADY_SCHEDULED' | 'JOB_TRIGGER_CONFLICT';
+  readonly jobId: string;
+
+  constructor(
+    message: string,
+    options: {
+      code: SchedulerConflictError['code'];
+      jobId: string;
+    },
+  ) {
+    super(message);
+    this.name = 'SchedulerConflictError';
+    this.code = options.code;
+    this.jobId = options.jobId;
+  }
+}
+
 export type JobRunStatus =
   'scheduled' | 'running' | 'completed' | 'failed' | 'canceled';
 
@@ -95,6 +113,7 @@ export class RecoverableScheduler implements Scheduler {
   readonly #stateStore: JobStateStore;
   readonly #clock: () => Date;
   readonly #onError: (error: unknown, state: JobState) => void | Promise<void>;
+  readonly #scheduling = new Set<string>();
   readonly #jobs = new Map<
     string,
     {
@@ -112,44 +131,69 @@ export class RecoverableScheduler implements Scheduler {
   }
 
   async schedule(job: ScheduledJob): Promise<void> {
-    validateJob(job);
-    if (this.#jobs.has(job.id)) {
-      throw new Error(`Job ${job.id} is already scheduled`);
-    }
-    const previous = await this.#stateStore.load(job.id);
-    if (previous !== undefined && !sameTrigger(previous.trigger, job.trigger)) {
-      throw new Error(`Job ${job.id} trigger conflicts with durable state`);
-    }
+    const normalizedJob = normalizeJob(job);
     if (
-      previous?.status === 'canceled' ||
-      (previous?.status === 'completed' && job.trigger.type === 'once')
+      this.#jobs.has(normalizedJob.id) ||
+      this.#scheduling.has(normalizedJob.id)
     ) {
-      return;
+      throw new SchedulerConflictError(
+        `Job ${normalizedJob.id} is already scheduled`,
+        { code: 'JOB_ALREADY_SCHEDULED', jobId: normalizedJob.id },
+      );
     }
+    this.#scheduling.add(normalizedJob.id);
+    try {
+      const previous = await this.#stateStore.load(normalizedJob.id);
+      if (
+        previous !== undefined &&
+        !sameTrigger(previous.trigger, normalizedJob.trigger)
+      ) {
+        throw new SchedulerConflictError(
+          `Job ${normalizedJob.id} trigger conflicts with durable state`,
+          { code: 'JOB_TRIGGER_CONFLICT', jobId: normalizedJob.id },
+        );
+      }
+      if (
+        previous?.status === 'canceled' ||
+        (previous?.status === 'completed' &&
+          normalizedJob.trigger.type === 'once')
+      ) {
+        return;
+      }
 
-    const now = this.#timestamp();
-    const nextRunAt = recoveredNextRunAt(job.trigger, previous, now);
-    const state: JobState = {
-      jobId: job.id,
-      generation: previous?.generation ?? 0,
-      trigger: job.trigger,
-      status: 'scheduled',
-      attempts: previous?.attempts ?? 0,
-      updatedAt: now,
-      nextRunAt,
-      ...(previous?.lastStartedAt === undefined
-        ? {}
-        : { lastStartedAt: previous.lastStartedAt }),
-      ...(previous?.lastCompletedAt === undefined
-        ? {}
-        : { lastCompletedAt: previous.lastCompletedAt }),
-      ...(previous?.lastError === undefined
-        ? {}
-        : { lastError: previous.lastError }),
-    };
-    await this.#stateStore.save(state);
-    this.#jobs.set(job.id, { job, generation: state.generation });
-    this.#arm(job.id, state);
+      const now = this.#timestamp();
+      const nextRunAt = recoveredNextRunAt(
+        normalizedJob.trigger,
+        previous,
+        now,
+      );
+      const state: JobState = {
+        jobId: normalizedJob.id,
+        generation: previous?.generation ?? 0,
+        trigger: normalizedJob.trigger,
+        status: 'scheduled',
+        attempts: previous?.attempts ?? 0,
+        updatedAt: now,
+        nextRunAt,
+        ...(previous?.lastStartedAt === undefined
+          ? {}
+          : { lastStartedAt: previous.lastStartedAt }),
+        ...(previous?.lastCompletedAt === undefined
+          ? {}
+          : { lastCompletedAt: previous.lastCompletedAt }),
+        ...(previous?.lastError === undefined
+          ? {}
+          : { lastError: previous.lastError }),
+      };
+      await this.#stateStore.save(state);
+      this.#jobs.set(normalizedJob.id, {
+        job: normalizedJob,
+        generation: state.generation,
+      });
+      this.#arm(normalizedJob.id, state);
+    } finally {
+      this.#scheduling.delete(normalizedJob.id);
+    }
   }
 
   async cancel(jobId: string): Promise<boolean> {
@@ -372,6 +416,41 @@ function validateJob(job: ScheduledJob): void {
   }
 }
 
+function normalizeJob(job: ScheduledJob): ScheduledJob {
+  validateJob(job);
+  const trigger: JobTrigger =
+    job.trigger.type === 'once'
+      ? Object.freeze({ type: 'once', runAt: job.trigger.runAt })
+      : Object.freeze({
+          type: 'interval',
+          everyMilliseconds: job.trigger.everyMilliseconds,
+        });
+  const retry =
+    job.retry === undefined
+      ? undefined
+      : Object.freeze({
+          policy: Object.freeze({
+            maxAttempts: job.retry.policy.maxAttempts,
+            initialDelayMs: job.retry.policy.initialDelayMs,
+            ...(job.retry.policy.backoffMultiplier === undefined
+              ? {}
+              : { backoffMultiplier: job.retry.policy.backoffMultiplier }),
+            ...(job.retry.policy.maxDelayMs === undefined
+              ? {}
+              : { maxDelayMs: job.retry.policy.maxDelayMs }),
+          }),
+          shouldRetry: job.retry.shouldRetry,
+        });
+  const run = job.run.bind(job);
+  return Object.freeze({
+    id: job.id,
+    name: job.name,
+    trigger,
+    ...(retry === undefined ? {} : { retry }),
+    run,
+  });
+}
+
 function validateJobState(state: JobState): void {
   validateJob({
     id: state.jobId,
@@ -434,11 +513,11 @@ export {
   type RetryPolicy,
 } from './retry.js';
 
-export const schedulerCapabilities = [
+export const schedulerCapabilities = Object.freeze([
   'durable-job-state',
   'interrupted-run-recovery',
   'durable-cancellation-tombstones',
   'single-process-non-overlap',
   'explicit-retry-classification',
   'bounded-exponential-backoff',
-] as const;
+] as const);

@@ -34,6 +34,18 @@ export interface AuditHistory {
   list(query?: AuditQuery): Promise<readonly AuditEvent[]>;
 }
 
+export class AuditHistoryError extends Error {
+  readonly code: 'DUPLICATE_AUDIT_EVENT';
+  readonly eventId: string;
+
+  constructor(eventId: string) {
+    super(`Audit event ${eventId} already exists`);
+    this.name = 'AuditHistoryError';
+    this.code = 'DUPLICATE_AUDIT_EVENT';
+    this.eventId = eventId;
+  }
+}
+
 export class StorageAuditHistory implements AuditHistory {
   readonly #storage: OperationalStorageAdapter;
 
@@ -48,7 +60,7 @@ export class StorageAuditHistory implements AuditHistory {
       updatedAt: new Date(Date.parse(event.occurredAt)).toISOString(),
       value: eventToJson(event),
     });
-    if (!created) throw new Error(`Audit event ${event.id} already exists`);
+    if (!created) throw new AuditHistoryError(event.id);
   }
 
   async get(id: string): Promise<AuditEvent | undefined> {

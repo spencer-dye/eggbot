@@ -18,7 +18,7 @@ EggBot is a reusable, provider-independent framework for safe fantasy-football a
 | `@eggbot/agent-local`   | Safe local decision-engine implementations                    | `core`, `agent`                                                |
 | `@eggbot/policy`        | Deterministic approval/rejection boundary                     | `core`, `agent`                                                |
 | `@eggbot/manager`       | Guarded autonomous application workflows                      | `core`, `platform`, `snapshot`, `analytics`, `agent`, `policy` |
-| `@eggbot/analytics`     | Deterministic calculations and analytics port                 | `core`, `football-data`                                        |
+| `@eggbot/analytics`     | Deterministic fantasy-football calculations                   | `core`, `football-data`                                        |
 | `@eggbot/storage`       | Persistence ports, atomic files, and immutable audit history  | None                                                           |
 | `@eggbot/scheduler`     | Recoverable timers, durable state, and bounded retries        | `storage`                                                      |
 | `@eggbot/cli`           | Application composition proof                                 | Public APIs of all packages                                    |
@@ -197,16 +197,13 @@ The CLI is the only code that reads Yahoo environment variables. For developer u
 
 Unit tests inject `fetch`, a clock, and token stores. Normal tests use representative JSON fixtures and never require Yahoo credentials or network access.
 
-Policy evaluation is action-scoped: every proposed action has its own approved/rejected result and complete issue list. A mixed decision has no ambiguous aggregate status. Orchestration explicitly derives approved actions before any future executor receives them.
+Policy evaluation is action-scoped: every proposed action has its own approved/rejected result and complete issue list. A mixed decision has no ambiguous aggregate status. Orchestration explicitly derives approved actions before an executor receives them.
 
 ## Deferred hardening decisions
 
 - Before production game-window automation, add provider-independent scoring-period lineup editability or player-lock state. Phase 7 cannot predict already-started-player locks because neither the normalized snapshot nor the platform read port currently exposes them; Yahoo remains authoritative during mandatory preflight. Multi-replica applications must supply distributed leases keyed by league, team, and scoring period.
-- Before autonomous waiver management, add provider-independent waiver system, FAAB balance, priority, and acquisition-limit state based on Phase 3 snapshots; do not mirror Yahoo's full settings payload. Phase 2 deliberately labels dry-runs as local validation until that state exists.
-- Extend lineup preflight with provider lock state when Phase 3 establishes a normalized representation. Phase 2 validates the resulting slot allocation and filled starters but Yahoo remains authoritative for locks.
 - Keep `PlatformReference` and `FantasyGame.platformReference` until a second adapter provides evidence for a shared `GameId` design.
 - Keep Yahoo's recursive collection traversal while sanitized fixtures and the opt-in live suite validate actual responses. Replace it with context-specific traversal if real payloads reveal duplicates or ambiguous nesting.
-- Further constrain injectable Yahoo base URLs if transports become consumer-configurable outside tests. Current API paths are generated internally and explicit absolute paths are rejected.
 - Extend `CollectionCoverage` with a complete variant only when a platform can authoritatively provide a total or `hasMore: false`; a short page alone is not proof of completeness.
 
 ## Decision and execution separation
@@ -224,29 +221,29 @@ A `DecisionEngine` receives domain context and analytics, not credentials or an 
 
 ## Analytics philosophy
 
-Deterministic facts belong in code. Decision engines may reason over those facts, but should not be asked to reproduce calculations that can be tested directly. Phase 4 implements typed, reproducible league analytics from an immutable snapshot and projection set. External projection acquisition remains a separate Phase 9 concern.
+Deterministic facts belong in code. Decision engines may reason over those facts, but should not be asked to reproduce calculations that can be tested directly. `@eggbot/analytics` implements typed, reproducible league analytics from an immutable snapshot and projection set. External projection acquisition remains a separate `@eggbot/football-data` concern.
 
 ## Configuration and extension points
 
-Applications are composition roots. They will construct and inject:
+Applications are composition roots. They construct and inject:
 
 - fantasy-platform readers and executors
 - decision engines
 - policy rules or engines
-- analytics providers
+- football-intelligence providers and deterministic analytics inputs
 - storage adapters
 - schedulers
 
-Library code does not read environment variables, create singleton clients, or select concrete providers. Future platform and model integrations should use separate packages that implement these public ports.
+Library code does not read environment variables, create singleton clients, or select concrete providers. Platform, model, and football-data integrations use separate packages that implement these public ports. No framework package contains league-specific team identity, scoring presets, or commissioner rules.
 
 ## Error and validation philosophy
 
-External values are validated at system boundaries; Phase 0 ID constructors use Zod for this purpose. Adapters should retain provider context while translating authentication, validation, transport, and API failures into actionable errors. Policy rejection remains a normal typed result, not an exception. A larger custom error hierarchy is intentionally deferred until real integrations demonstrate the distinctions needed.
+External values are validated at system boundaries, and opaque ID constructors parse untrusted strings. Package-specific validation and conflict errors carry stable codes or structured resource fields where callers need to recover. Provider authentication and transport failures remain distinct from malformed provider data. Policy denial, execution failure or uncertainty, verification mismatch, and reconciliation outcomes remain typed data rather than being collapsed into exceptions. Unexpected programming faults are not relabeled as normal domain rejection.
 
-## Eventual open-source considerations
+## Public release considerations
 
-Public exports are intentionally small and package-scoped for eventual semantic versioning. Provider payloads and implementation helpers remain internal. Normal tests require no credentials or live services. Future provider integration tests must be opt-in and separated from deterministic unit tests. Package READMEs document responsibility so contributors can extend the system without introducing circular dependencies or leaking concrete providers into stable abstractions.
+Public exports are intentionally small, package-scoped, and versioned together for the initial release. Provider payloads and implementation helpers remain internal. Package builds omit test sources, and normal tests require no credentials or live services. Provider integration tests are opt-in and separated from deterministic unit tests. Package READMEs document responsibility so contributors can extend the system without introducing circular dependencies or leaking concrete providers into stable abstractions.
 
 ## Phase 0 deviations
 
-The instructed package boundaries are retained. The only interpretation choices are conservative: no build orchestrator is added for this small workspace; ESLint uses its current flat configuration; Yahoo exposes metadata rather than a throwing adapter; and storage, scheduler, and most analytics capabilities remain ports instead of placeholder implementations. These choices reduce speculative code while preserving every planned extension seam.
+The instructed package boundaries are retained. The initial interpretation choices were conservative: no build orchestrator was added for this small workspace, ESLint uses its flat configuration, and Yahoo exposed metadata rather than a throwing placeholder adapter. Later phases filled the documented packages only when concrete contracts required them.

@@ -10,6 +10,7 @@ import {
   type League,
   type LeagueId,
   type Player,
+  type SnapshotId,
   type Team,
 } from '@eggbot/core';
 import type { FantasyPlatformReader, PlayerQuery } from '@eggbot/platform';
@@ -42,6 +43,19 @@ const players = new Map([
 ]);
 
 describe('LeagueSnapshotService', () => {
+  it('rejects an invalid injected snapshot ID', async () => {
+    const service = new LeagueSnapshotService({
+      reader: readerFixture(),
+      idFactory: () => '' as SnapshotId,
+    });
+
+    await expect(service.capture(captureOptions())).rejects.toMatchObject({
+      name: 'LeagueSnapshotCaptureError',
+      code: 'INVALID_SNAPSHOT_ID',
+      resource: 'id',
+    });
+  });
+
   it('captures normalized league-wide state with explicit collection bounds', async () => {
     const reader = readerFixture();
     const timestamps = ['2026-09-01T12:00:00.000Z', '2026-09-01T12:00:02.000Z'];

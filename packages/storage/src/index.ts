@@ -35,6 +35,7 @@ export {
 } from './file-storage.js';
 export { InMemoryStorageAdapter } from './memory-storage.js';
 export {
+  AuditHistoryError,
   StorageAuditHistory,
   type AuditEvent,
   type AuditHistory,
@@ -48,11 +49,11 @@ export {
   type AuditedOperationRunnerOptions,
 } from './audited-operation.js';
 
-export const storageCapabilities = [
+export const storageCapabilities = Object.freeze([
   'database-neutral-port',
   'atomic-file-storage',
   'no-clobber-create',
   'immutable-audit-history',
   'audited-operation-lifecycle',
   'recovery-scans',
-] as const;
+] as const);

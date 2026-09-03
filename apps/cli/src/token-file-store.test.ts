@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -33,6 +33,7 @@ describe('CLI Yahoo token storage', () => {
 
     expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(tokens);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect(await readdir(join(directory, 'nested'))).toEqual(['tokens.json']);
     await expect(createFileTokenStore({ path }).load()).resolves.toEqual(
       tokens,
     );

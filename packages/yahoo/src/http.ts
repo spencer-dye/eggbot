@@ -22,25 +22,38 @@ export interface YahooWriteResponse {
 export class YahooHttpClient {
   readonly #tokenProvider: YahooAccessTokenProvider;
   readonly #fetch: typeof fetch;
-  readonly #baseUrl: string;
+  readonly #baseUrl: URL;
 
   constructor(options: YahooHttpClientOptions) {
     this.#tokenProvider = options.tokenProvider;
     this.#fetch = options.fetch ?? globalThis.fetch;
-    this.#baseUrl = options.baseUrl ?? DEFAULT_API_BASE_URL;
+    try {
+      this.#baseUrl = new URL(options.baseUrl ?? DEFAULT_API_BASE_URL);
+    } catch (cause) {
+      throw new YahooApiError('Yahoo API base URL is invalid', {
+        code: 'INVALID_API_BASE_URL',
+        cause,
+      });
+    }
+    if (
+      !['http:', 'https:'].includes(this.#baseUrl.protocol) ||
+      this.#baseUrl.search.length > 0 ||
+      this.#baseUrl.hash.length > 0
+    ) {
+      throw new YahooApiError('Yahoo API base URL is invalid', {
+        code: 'INVALID_API_BASE_URL',
+      });
+    }
+    if (!this.#baseUrl.pathname.endsWith('/')) {
+      this.#baseUrl.pathname += '/';
+    }
   }
 
   async get(
     path: string,
     query: Readonly<Record<string, string | number | undefined>> = {},
   ): Promise<unknown> {
-    if (path.startsWith('http:') || path.startsWith('https:')) {
-      throw new YahooApiError('Yahoo client paths must be relative', {
-        code: 'INVALID_API_PATH',
-      });
-    }
-
-    const url = new URL(path.replace(/^\//, ''), this.#baseUrl);
+    const url = this.#relativeUrl(path);
     url.searchParams.set('format', 'json');
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) url.searchParams.set(key, String(value));
@@ -115,12 +128,28 @@ export class YahooHttpClient {
   }
 
   #relativeUrl(path: string): URL {
-    if (path.startsWith('http:') || path.startsWith('https:')) {
+    const relativePath = path.replace(/^\/+/, '');
+    let url: URL;
+    try {
+      url = new URL(relativePath, this.#baseUrl);
+    } catch (cause) {
+      throw new YahooApiError('Yahoo client path is invalid', {
+        code: 'INVALID_API_PATH',
+        cause,
+      });
+    }
+    const basePath = this.#baseUrl.pathname.endsWith('/')
+      ? this.#baseUrl.pathname
+      : `${this.#baseUrl.pathname}/`;
+    if (
+      url.origin !== this.#baseUrl.origin ||
+      !url.pathname.startsWith(basePath)
+    ) {
       throw new YahooApiError('Yahoo client paths must be relative', {
         code: 'INVALID_API_PATH',
       });
     }
-    return new URL(path.replace(/^\//, ''), this.#baseUrl);
+    return url;
   }
 
   async #request(

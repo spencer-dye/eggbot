@@ -24,25 +24,43 @@ export interface NoActionDecisionEngineOptions {
 export function createLocalDecisionEngine(
   options: LocalDecisionEngineOptions,
 ): DecisionEngine {
-  return {
-    id: options.id,
-    version: options.version,
-    kind: options.kind ?? 'deterministic',
-    decide: (context) => Promise.resolve(options.decide(context)),
-  };
+  const id = requiredDescriptor(options.id, 'id');
+  const version = requiredDescriptor(options.version, 'version');
+  const kind = options.kind ?? 'deterministic';
+  if (kind !== 'deterministic' && kind !== 'human') {
+    throw new TypeError('Local decision engine kind is invalid');
+  }
+  if (typeof options.decide !== 'function') {
+    throw new TypeError('Local decision function is invalid');
+  }
+  const decide = options.decide;
+  return Object.freeze({
+    id,
+    version,
+    kind,
+    decide: (context: DecisionContext) => Promise.resolve(decide(context)),
+  });
 }
 
 export function createNoActionDecisionEngine(
   options: NoActionDecisionEngineOptions,
 ): DecisionEngine {
+  const rationale = requiredDescriptor(options.rationale, 'rationale');
   return createLocalDecisionEngine({
     id: options.id,
     version: options.version,
     decide: () => ({
-      rationale: options.rationale,
+      rationale,
       proposedActions: [],
     }),
   });
+}
+
+function requiredDescriptor(value: string, name: string): string {
+  if (value.trim().length === 0) {
+    throw new TypeError(`Local decision engine ${name} is empty`);
+  }
+  return value;
 }
 
 export {

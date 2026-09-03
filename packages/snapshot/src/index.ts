@@ -137,8 +137,9 @@ export class LeagueSnapshotService {
       transactionsPromise,
     ]);
     const capturedAt = this.#timestamp('capturedAt');
+    const id = this.#snapshotId();
     const result: LeagueSnapshot = {
-      id: this.#idFactory(),
+      id,
       captureStartedAt,
       capturedAt,
       consistency: 'best-effort',
@@ -169,6 +170,17 @@ export class LeagueSnapshotService {
       );
     }
     return value;
+  }
+
+  #snapshotId(): SnapshotId {
+    try {
+      return snapshotId(this.#idFactory());
+    } catch (cause) {
+      throw new LeagueSnapshotCaptureError(
+        'Snapshot ID factory returned an invalid identifier',
+        { code: 'INVALID_SNAPSHOT_ID', resource: 'id', cause },
+      );
+    }
   }
 }
 

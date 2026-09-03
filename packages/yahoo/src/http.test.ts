@@ -56,6 +56,22 @@ describe('YahooHttpClient', () => {
     });
   });
 
+  it('rejects absolute and base-escaping API paths regardless of casing', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const client = new YahooHttpClient({
+      tokenProvider: { getAccessToken: () => Promise.resolve('token') },
+      fetch: fetchMock,
+    });
+
+    await expect(
+      client.get('HTTPS://example.test/secret'),
+    ).rejects.toMatchObject({ code: 'INVALID_API_PATH' });
+    await expect(client.get('../oauth2/token')).rejects.toMatchObject({
+      code: 'INVALID_API_PATH',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('sends XML writes and refreshes once after a 401', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

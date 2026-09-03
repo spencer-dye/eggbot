@@ -7,7 +7,7 @@ import {
   StorageJobStateStore,
   runWithRetry,
 } from './index.js';
-import type { RetryExhaustedError } from './index.js';
+import type { RetryExhaustedError, SchedulerConflictError } from './index.js';
 
 describe('runWithRetry', () => {
   it('uses bounded exponential backoff for explicitly retryable failures', async () => {
@@ -84,6 +84,46 @@ describe('RecoverableScheduler', () => {
     scheduler.close();
   });
 
+  it('copies schedule configuration and rejects concurrent registration', async () => {
+    let releaseLoad: (() => void) | undefined;
+    const stateStore = {
+      load: () =>
+        new Promise<undefined>((resolve) => {
+          releaseLoad = () => resolve(undefined);
+        }),
+      save: vi.fn(() => Promise.resolve()),
+      delete: vi.fn(() => Promise.resolve(false)),
+    };
+    const scheduler = new RecoverableScheduler({ stateStore });
+    const trigger = {
+      type: 'once' as const,
+      runAt: '2026-09-02T13:00:00.000Z',
+    };
+    const job = {
+      id: 'concurrent',
+      name: 'Concurrent registration',
+      trigger,
+      run: () => Promise.resolve(),
+    };
+    const first = scheduler.schedule(job);
+
+    await expect(scheduler.schedule(job)).rejects.toMatchObject({
+      name: 'SchedulerConflictError',
+      code: 'JOB_ALREADY_SCHEDULED',
+      jobId: job.id,
+    } satisfies Partial<SchedulerConflictError>);
+    trigger.runAt = '2026-09-03T13:00:00.000Z';
+    releaseLoad?.();
+    await first;
+
+    expect(stateStore.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trigger: { type: 'once', runAt: '2026-09-02T13:00:00.000Z' },
+      }),
+    );
+    scheduler.close();
+  });
+
   it('recovers a run interrupted while marked running', async () => {
     const states = new StorageJobStateStore(new InMemoryStorageAdapter());
     await states.save({
@@ -111,6 +151,34 @@ describe('RecoverableScheduler', () => {
       status: 'completed',
       attempts: 2,
     });
+    scheduler.close();
+  });
+
+  it('classifies a conflicting durable trigger', async () => {
+    const states = new StorageJobStateStore(new InMemoryStorageAdapter());
+    await states.save({
+      jobId: 'trigger-conflict',
+      generation: 0,
+      trigger: { type: 'interval', everyMilliseconds: 60_000 },
+      status: 'scheduled',
+      attempts: 0,
+      updatedAt: '2026-09-02T12:00:00.000Z',
+      nextRunAt: '2026-09-02T12:01:00.000Z',
+    });
+    const scheduler = new RecoverableScheduler({ stateStore: states });
+
+    await expect(
+      scheduler.schedule({
+        id: 'trigger-conflict',
+        name: 'Changed trigger',
+        trigger: { type: 'interval', everyMilliseconds: 120_000 },
+        run: () => Promise.resolve(),
+      }),
+    ).rejects.toMatchObject({
+      name: 'SchedulerConflictError',
+      code: 'JOB_TRIGGER_CONFLICT',
+      jobId: 'trigger-conflict',
+    } satisfies Partial<SchedulerConflictError>);
     scheduler.close();
   });
 

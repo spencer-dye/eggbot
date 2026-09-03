@@ -1,5 +1,13 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import type { YahooTokenSet, YahooTokenStore } from '@eggbot/yahoo';
 
@@ -27,12 +35,27 @@ export function createFileTokenStore(
       }
     },
     async save(updated) {
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-      await writeFile(path, `${JSON.stringify(updated, null, 2)}\n`, {
-        encoding: 'utf8',
-        mode: 0o600,
-      });
-      await chmod(path, 0o600);
+      const directory = dirname(path);
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      const temporaryPath = join(
+        directory,
+        `.${basename(path)}.${randomUUID()}.tmp`,
+      );
+      try {
+        await writeFile(
+          temporaryPath,
+          `${JSON.stringify(updated, null, 2)}\n`,
+          {
+            encoding: 'utf8',
+            mode: 0o600,
+          },
+        );
+        await chmod(temporaryPath, 0o600);
+        await rename(temporaryPath, path);
+        await chmod(path, 0o600);
+      } finally {
+        await unlink(temporaryPath).catch(ignoreMissing);
+      }
       tokens = updated;
       options.onSaved?.(path, updated);
     },
@@ -57,4 +80,8 @@ function isMissingFile(error: unknown): boolean {
     'code' in error &&
     error.code === 'ENOENT'
   );
+}
+
+function ignoreMissing(error: unknown): void {
+  if (!isMissingFile(error)) throw error;
 }

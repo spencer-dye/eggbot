@@ -6,6 +6,6 @@ Provider-independent orchestration for normalized league snapshots.
 
 Free-agent, waiver, and recent-transaction collections are explicitly bounded. Callers choose their limits and can inspect coverage metadata instead of assuming those collections are complete.
 
-Phase 8 snapshots also retain optional normalized league acquisition rules and team-relative waiver state carried by the platform reads. Integrity validation rejects negative or non-finite acquisition values; unavailable provider facts remain absent rather than inferred.
+Snapshots also retain optional normalized league acquisition rules and team-relative waiver state carried by the platform reads. Integrity validation rejects negative or non-finite acquisition values; unavailable provider facts remain absent rather than inferred. Injected snapshot IDs are parsed at runtime before a result is returned.
 
 This package does not select a database or persist snapshots. Applications decide whether and where a completed snapshot is stored.

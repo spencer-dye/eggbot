@@ -3,7 +3,7 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+    "tsBuildInfoFile": "./.tsbuildinfo"
   },
   "references": [
     { "path": "../../packages/core" },
@@ -20,5 +20,6 @@
     { "path": "../../packages/scheduler" },
     { "path": "../../packages/trades" }
   ],
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
 }

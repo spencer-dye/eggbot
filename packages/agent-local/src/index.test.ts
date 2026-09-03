@@ -10,6 +10,23 @@ import {
 const context = { fixture: 'opaque-context' } as unknown as DecisionContext;
 
 describe('@eggbot/agent-local', () => {
+  it('copies and freezes configuration used as engine provenance', async () => {
+    const options = {
+      id: 'local',
+      version: '1',
+      rationale: 'No safe action',
+    };
+    const engine = createNoActionDecisionEngine(options);
+    options.id = 'mutated';
+    options.rationale = 'mutated';
+
+    expect(engine).toMatchObject({ id: 'local', version: '1' });
+    expect(Object.isFrozen(engine)).toBe(true);
+    await expect(engine.decide(context)).resolves.toMatchObject({
+      rationale: 'No safe action',
+    });
+  });
+
   it('provides a safe concrete no-action engine', async () => {
     const engine = createNoActionDecisionEngine({
       id: 'safe-default',

@@ -36,11 +36,11 @@ export {
   type UsageWindow,
 } from './types.js';
 
-export const footballDataCapabilities = [
+export const footballDataCapabilities = Object.freeze([
   'injuries',
   'projections',
   'depth-charts',
   'usage',
   'news',
   'schedules',
-] as const;
+] as const);
