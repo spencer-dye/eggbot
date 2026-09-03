@@ -374,13 +374,18 @@ function validateSnapshot(
 function validateAcquisitionRules(snapshot: LeagueSnapshot): void {
   const rules = snapshot.league.settings.acquisitionRules;
   if (rules === undefined) return;
+  if (
+    rules.waiverPeriodDays !== undefined &&
+    (!Number.isFinite(rules.waiverPeriodDays) || rules.waiverPeriodDays < 0)
+  ) {
+    invalid('INVALID_ACQUISITION_RULE', 'waiverPeriodDays');
+  }
   for (const [name, value] of [
-    ['waiverPeriodDays', rules.waiverPeriodDays],
     ['waiverBudget', rules.waiverBudget],
     ['maxWeeklyAcquisitions', rules.maxWeeklyAcquisitions],
     ['maxSeasonAcquisitions', rules.maxSeasonAcquisitions],
   ] as const) {
-    if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
       invalid('INVALID_ACQUISITION_RULE', name);
     }
   }
@@ -397,7 +402,7 @@ function validateTeamAcquisitionState(
     ['seasonAcquisitions', state.seasonAcquisitions],
     ['weeklyAcquisitions', state.weeklyAcquisitions],
   ] as const) {
-    if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
       invalid('INVALID_TEAM_ACQUISITION_STATE', `${team.id}.${name}`);
     }
   }

@@ -36,7 +36,7 @@ Implemented deterministic maximum-projection lineup selection with complete-cove
 
 ## Phase 8 — Waiver management
 
-Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping, projected-gain add/drop selection, ordered claims, priority and budget bidding strategies, policy enforcement for acquisition limits and batch budget, and guarded autonomous dry-run/submission orchestration. Pending-claim outcome reconciliation remains Phase 11 work.
+Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping, projected-gain add/drop selection, ranked claim submission, priority and integer-budget bidding strategies, policy enforcement for acquisition limits and batch budget, and guarded autonomous orchestration with immediate-roster verification versus pending-claim resolution. Pending-claim outcome reconciliation remains Phase 11 work.
 
 ## Phase 9 — External football intelligence
 

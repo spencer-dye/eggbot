@@ -106,7 +106,7 @@ async function main(args: readonly string[]): Promise<void> {
         'post-execution-verification',
         'autonomous-waiver-dry-run',
         'autonomous-waiver-execution',
-        'ordered-claims',
+        'ranked-claim-submission',
         'budget-aware-bidding',
         'complete-audit-record',
       ],
@@ -354,7 +354,7 @@ async function main(args: readonly string[]): Promise<void> {
       const projectionSet = await readProjectionFile(
         requireOption(commandArgs, '--projections'),
       );
-      const fixedBid = readNonNegativeFiniteOption(commandArgs, '--bid');
+      const fixedBid = readNonNegativeNumberOption(commandArgs, '--bid');
       const bidPercentage = readNonNegativeFiniteOption(
         commandArgs,
         '--bid-percent',
@@ -364,7 +364,7 @@ async function main(args: readonly string[]): Promise<void> {
       }
       const maximumActions =
         readNumberOption(commandArgs, '--max-actions') ?? 1;
-      const maxWaiverBid = readNonNegativeFiniteOption(
+      const maxWaiverBid = readNonNegativeNumberOption(
         commandArgs,
         '--max-waiver-bid',
       );
@@ -412,6 +412,7 @@ async function main(args: readonly string[]): Promise<void> {
           reader,
           allowWrites: shouldExecute,
         }),
+        rosterReader: reader,
         maxProjectionAgeMs:
           readNumberOption(commandArgs, '--max-projection-age-ms') ??
           30 * 60 * 1_000,

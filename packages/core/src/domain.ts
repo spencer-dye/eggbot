@@ -45,6 +45,7 @@ export type WaiverSystem = 'priority' | 'budget' | 'unknown';
 export interface AcquisitionRules {
   readonly waiverSystem: WaiverSystem;
   readonly waiverPeriodDays?: number;
+  /** Non-negative integer units when the league uses a waiver budget. */
   readonly waiverBudget?: number;
   readonly maxWeeklyAcquisitions?: number;
   readonly maxSeasonAcquisitions?: number;
@@ -53,6 +54,7 @@ export interface AcquisitionRules {
 /** Current team-relative acquisition state, separate from static league rules. */
 export interface TeamAcquisitionState {
   readonly waiverPriority?: number;
+  /** Non-negative integer units remaining in the league waiver budget. */
   readonly waiverBudgetRemaining?: number;
   readonly seasonAcquisitions?: number;
   readonly weeklyAcquisitions?: number;

@@ -55,7 +55,7 @@ const teamSchema = z.object({
   team_key: z.string().min(1),
   name: z.string().min(1),
   waiver_priority: z.coerce.number().int().positive().optional(),
-  faab_balance: z.coerce.number().nonnegative().optional(),
+  faab_balance: z.coerce.number().int().nonnegative().safe().optional(),
   number_of_moves: z.coerce.number().int().nonnegative().optional(),
 });
 
@@ -299,8 +299,9 @@ function mapAcquisitionRules(
   const waiverPeriodDays = optionalNumber(
     findFirstValue(settings, 'waiver_time'),
   );
-  const waiverBudget = optionalNumber(
+  const waiverBudget = optionalSafeInteger(
     findFirstValue(settings, 'waiver_budget'),
+    'league.settings.waiver_budget',
   );
   const maxWeeklyAcquisitions = positiveLimit(
     findFirstValue(settings, 'max_weekly_adds'),
@@ -532,8 +533,26 @@ function booleanValue(value: unknown): boolean | undefined {
 }
 
 function positiveLimit(value: unknown): number | undefined {
-  const number = optionalNumber(value);
+  const number = optionalSafeInteger(
+    value,
+    'league.settings.acquisition_limit',
+  );
   return number === undefined || number <= 0 ? undefined : number;
+}
+
+function optionalSafeInteger(
+  value: unknown,
+  resource: string,
+): number | undefined {
+  if (value === undefined) return undefined;
+  const number = optionalNumber(value);
+  if (number === undefined || !Number.isSafeInteger(number) || number < 0) {
+    throw new YahooResponseValidationError(
+      `Yahoo ${resource} was not a non-negative safe integer`,
+      { resource, details: value },
+    );
+  }
+  return number;
 }
 
 function requiredNumber(value: unknown, resource: string): number {

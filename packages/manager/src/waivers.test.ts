@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { DecisionEngine, FantasyActionIntent } from '@eggbot/agent';
 import {
   actionId,
   decisionId,
@@ -11,7 +12,9 @@ import {
   type ActionResult,
   type FantasyAction,
   type LeagueSnapshot,
+  type Roster,
 } from '@eggbot/core';
+import type { FantasyPlatformReader } from '@eggbot/platform';
 import { createPolicyEngine } from '@eggbot/policy';
 
 import { AutonomousWaiverManager } from './waivers.js';
@@ -23,6 +26,7 @@ const benchSlot = rosterSlotId('bench');
 const starter = player('starter');
 const bench = player('bench');
 const waiver = player('waiver');
+const freeAgent = player('free-agent');
 
 describe('AutonomousWaiverManager', () => {
   it('runs a guarded dry-run and retains ordered approval evidence', async () => {
@@ -47,6 +51,9 @@ describe('AutonomousWaiverManager', () => {
     const result = await manager(executor).run(options('execute'));
 
     expect(result.status).toBe('submitted');
+    expect(result.resolutions).toEqual([
+      { actionId: actionId('action'), kind: 'pending-waiver' },
+    ]);
     expect(executor.execute).toHaveBeenNthCalledWith(
       1,
       result.policyApproval?.actions,
@@ -57,6 +64,133 @@ describe('AutonomousWaiverManager', () => {
       result.policyApproval?.actions,
       { mode: 'execute' },
     );
+  });
+
+  it('verifies immediate free-agent mutations through a roster re-read', async () => {
+    const sourceSnapshot = snapshotWithOpenSpots();
+    const observedRoster: Roster = {
+      teamId: team,
+      entries: [
+        ...sourceSnapshot.teams[0]!.roster.entries,
+        { player: freeAgent },
+      ],
+    };
+    const rosterReader = {
+      getRoster: vi.fn(() => Promise.resolve(observedRoster)),
+    };
+    const result = await manager(executorReturning('executed'), {
+      snapshot: sourceSnapshot,
+      rosterReader,
+      decisionEngine: engineReturning([
+        {
+          type: 'add-player',
+          leagueId: league,
+          teamId: team,
+          playerId: freeAgent.id,
+        },
+      ]),
+    }).run(options('execute'));
+
+    expect(result.status).toBe('executed');
+    expect(result.resolutions).toEqual([
+      {
+        actionId: actionId('action'),
+        kind: 'immediate',
+        verification: {
+          status: 'verified',
+          observedRoster,
+          issues: [],
+        },
+      },
+    ]);
+    expect(rosterReader.getRoster).toHaveBeenCalledOnce();
+  });
+
+  it('separates immediate verification from pending waiver submission', async () => {
+    const sourceSnapshot = snapshotWithOpenSpots();
+    const observedRoster: Roster = {
+      teamId: team,
+      entries: [
+        ...sourceSnapshot.teams[0]!.roster.entries,
+        { player: freeAgent },
+      ],
+    };
+    const result = await manager(executorReturning('executed'), {
+      snapshot: sourceSnapshot,
+      rosterReader: { getRoster: () => Promise.resolve(observedRoster) },
+      decisionEngine: engineReturning([
+        {
+          type: 'add-player',
+          leagueId: league,
+          teamId: team,
+          playerId: freeAgent.id,
+        },
+        {
+          type: 'waiver-claim',
+          leagueId: league,
+          teamId: team,
+          addPlayerId: waiver.id,
+          bid: 3,
+        },
+      ]),
+    }).run(options('execute'));
+
+    expect(result.status).toBe('executed-and-submitted');
+    expect(result.resolutions).toEqual([
+      {
+        actionId: actionId('action'),
+        kind: 'immediate',
+        verification: {
+          status: 'verified',
+          observedRoster,
+          issues: [],
+        },
+      },
+      { actionId: actionId('action-1'), kind: 'pending-waiver' },
+    ]);
+  });
+
+  it('records immediate roster mismatches and read failures per action', async () => {
+    const sourceSnapshot = snapshotWithOpenSpots();
+    const action = {
+      type: 'add-player' as const,
+      leagueId: league,
+      teamId: team,
+      playerId: freeAgent.id,
+    };
+    const mismatch = await manager(executorReturning('executed'), {
+      snapshot: sourceSnapshot,
+      rosterReader: {
+        getRoster: () => Promise.resolve(sourceSnapshot.teams[0]!.roster),
+      },
+      decisionEngine: engineReturning([action]),
+    }).run(options('execute'));
+    const failed = await manager(executorReturning('executed'), {
+      snapshot: sourceSnapshot,
+      rosterReader: {
+        getRoster: () => Promise.reject(new Error('Yahoo roster read failed')),
+      },
+      decisionEngine: engineReturning([action]),
+    }).run(options('execute'));
+
+    expect(mismatch.resolutions[0]).toMatchObject({
+      kind: 'immediate',
+      verification: {
+        status: 'mismatch',
+        issues: [{ code: 'ADDED_PLAYER_MISSING', playerId: freeAgent.id }],
+      },
+    });
+    expect(failed.resolutions[0]).toEqual({
+      actionId: actionId('action'),
+      kind: 'immediate',
+      verification: {
+        status: 'failed',
+        error: {
+          code: 'ROSTER_VERIFICATION_FAILED',
+          message: 'Yahoo roster read failed',
+        },
+      },
+    });
   });
 
   it('does not submit when platform preflight fails', async () => {
@@ -81,11 +215,19 @@ describe('AutonomousWaiverManager', () => {
   });
 });
 
-function manager(executor: { execute: ReturnType<typeof vi.fn> }) {
+function manager(
+  executor: { execute: ReturnType<typeof vi.fn> },
+  overrides: {
+    readonly snapshot?: LeagueSnapshot;
+    readonly decisionEngine?: DecisionEngine;
+    readonly rosterReader?: Pick<FantasyPlatformReader, 'getRoster'>;
+  } = {},
+) {
+  const sourceSnapshot = overrides.snapshot ?? snapshot;
   return new AutonomousWaiverManager({
-    snapshotService: { capture: () => Promise.resolve(snapshot) },
+    snapshotService: { capture: () => Promise.resolve(sourceSnapshot) },
     projectionProvider: { getProjections: () => Promise.resolve(projections) },
-    decisionEngine: {
+    decisionEngine: overrides.decisionEngine ?? {
       id: 'waiver-test',
       version: '1.0.0',
       kind: 'deterministic',
@@ -113,12 +255,73 @@ function manager(executor: { execute: ReturnType<typeof vi.fn> }) {
       },
     }),
     executor,
+    rosterReader: overrides.rosterReader ?? {
+      getRoster: () => Promise.resolve(sourceSnapshot.teams[0]!.roster),
+    },
     maxProjectionAgeMs: 5 * 60 * 1_000,
     clock: () => new Date('2026-09-01T12:01:00.000Z'),
     runIdFactory: () => 'run',
     decisionIdFactory: () => decisionId('decision'),
-    actionIdFactory: () => actionId('action'),
+    actionIdFactory: (index) =>
+      actionId(index === 0 ? 'action' : `action-${index}`),
   });
+}
+
+function engineReturning(
+  actions: readonly FantasyActionIntent[],
+): DecisionEngine {
+  return {
+    id: 'waiver-test',
+    version: '1.0.0',
+    kind: 'deterministic',
+    decide: () =>
+      Promise.resolve({
+        rationale: 'Acquisition test.',
+        proposedActions: actions,
+      }),
+  };
+}
+
+function snapshotWithOpenSpots(): LeagueSnapshot {
+  const extraSlot = rosterSlotId('extra-bench');
+  return {
+    ...snapshot,
+    league: {
+      ...snapshot.league,
+      settings: {
+        ...snapshot.league.settings,
+        rosterSlots: [
+          ...snapshot.league.settings.rosterSlots,
+          {
+            id: extraSlot,
+            name: 'BN',
+            kind: 'bench',
+            eligiblePositions: ['RB'],
+          },
+        ],
+      },
+    },
+    teams: [
+      {
+        ...snapshot.teams[0]!,
+        roster: {
+          teamId: team,
+          entries: snapshot.teams[0]!.roster.entries.slice(0, 1),
+        },
+        lineup: {
+          ...snapshot.teams[0]!.lineup,
+          assignments: snapshot.teams[0]!.lineup.assignments.slice(0, 1),
+        },
+      },
+    ],
+    playerPool: {
+      freeAgents: {
+        items: [freeAgent],
+        coverage: { kind: 'bounded', requestedLimit: 10, returnedCount: 1 },
+      },
+      waivers: snapshot.playerPool.waivers,
+    },
+  };
 }
 
 function executorReturning(result: 'dry-run' | 'executed') {
@@ -176,6 +379,7 @@ const projections = {
     { playerId: starter.id, points: 20 },
     { playerId: bench.id, points: 5 },
     { playerId: waiver.id, points: 15 },
+    { playerId: freeAgent.id, points: 12 },
   ],
 };
 

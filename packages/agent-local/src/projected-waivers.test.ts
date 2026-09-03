@@ -22,6 +22,22 @@ const freeAgent = player('free-agent');
 const waiver = player('waiver');
 
 describe('createProjectedWaiverDecisionEngine', () => {
+  it('rejects fractional fixed bids and bid bounds', () => {
+    expect(() =>
+      createProjectedWaiverDecisionEngine({
+        bidStrategy: { kind: 'fixed', amount: 2.5 },
+      }),
+    ).toThrow('safe integer');
+    expect(() =>
+      createProjectedWaiverDecisionEngine({
+        bidStrategy: {
+          kind: 'percentage-of-remaining',
+          percentage: 0.1,
+          minimum: 1.5,
+        },
+      }),
+    ).toThrow('safe integers');
+  });
   it('ranks upgrades, preserves claim ordering, and budgets the worst case', async () => {
     const context = makeContext('budget');
     const proposal = await createProjectedWaiverDecisionEngine({

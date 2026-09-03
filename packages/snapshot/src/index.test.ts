@@ -140,6 +140,21 @@ describe('LeagueSnapshotService', () => {
     ).rejects.toMatchObject({ code: 'INVALID_TEAM_ACQUISITION_STATE' });
   });
 
+  it('rejects fractional normalized waiver budgets', async () => {
+    const reader = readerFixture();
+    reader.getLeague.mockResolvedValue({
+      ...league,
+      settings: {
+        ...league.settings,
+        acquisitionRules: { waiverSystem: 'budget', waiverBudget: 2.5 },
+      },
+    });
+
+    await expect(
+      serviceFor(reader).capture(captureOptions()),
+    ).rejects.toMatchObject({ code: 'INVALID_ACQUISITION_RULE' });
+  });
+
   it('rejects a configured team-count mismatch', async () => {
     const reader = readerFixture();
     reader.getTeams.mockResolvedValue([teams[0] as Team]);

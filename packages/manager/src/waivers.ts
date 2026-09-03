@@ -17,11 +17,14 @@ import {
   type ActionResult,
   type FantasyAction,
   type LeagueSnapshot,
+  type PlayerId,
+  type Roster,
   type TeamId,
 } from '@eggbot/core';
 import type {
   ExecutionOptions,
   FantasyPlatformExecutor,
+  FantasyPlatformReader,
 } from '@eggbot/platform';
 import {
   createPolicyApproval,
@@ -49,6 +52,7 @@ export interface AutonomousWaiverManagerOptions {
   readonly decisionEngine: DecisionEngine;
   readonly policyEngine: PolicyEngine;
   readonly executor: FantasyPlatformExecutor;
+  readonly rosterReader: Pick<FantasyPlatformReader, 'getRoster'>;
   readonly maxProjectionAgeMs: number;
   readonly clock?: () => Date;
   readonly runIdFactory?: () => string;
@@ -74,9 +78,54 @@ export type WaiverManagementStatus =
   | 'stale-before-execution'
   | 'preflight-failed'
   | 'dry-run'
+  | 'executed'
   | 'submitted'
+  | 'executed-and-submitted'
   | 'execution-failed'
   | 'execution-uncertain';
+
+export type AcquisitionVerificationIssue =
+  | {
+      readonly code: 'TEAM_MISMATCH';
+      readonly expectedTeamId: TeamId;
+      readonly observedTeamId: TeamId;
+    }
+  | {
+      readonly code: 'ADDED_PLAYER_MISSING';
+      readonly playerId: PlayerId;
+    }
+  | {
+      readonly code: 'DROPPED_PLAYER_PRESENT';
+      readonly playerId: PlayerId;
+    };
+
+export type ImmediateAcquisitionVerification =
+  | {
+      readonly status: 'verified';
+      readonly observedRoster: Roster;
+      readonly issues: readonly [];
+    }
+  | {
+      readonly status: 'mismatch';
+      readonly observedRoster: Roster;
+      readonly issues: readonly AcquisitionVerificationIssue[];
+    }
+  | {
+      readonly status: 'failed';
+      readonly error: { readonly code: string; readonly message: string };
+    };
+
+export type AcquisitionResolution =
+  | {
+      readonly actionId: ActionId;
+      readonly kind: 'immediate';
+      readonly verification: ImmediateAcquisitionVerification;
+    }
+  | {
+      readonly actionId: ActionId;
+      readonly kind: 'pending-waiver';
+      readonly externalReference?: string;
+    };
 
 export interface WaiverManagementRun {
   readonly id: string;
@@ -92,6 +141,7 @@ export interface WaiverManagementRun {
   readonly scopeIssues: readonly WaiverScopeIssue[];
   readonly preflightResults: readonly ActionResult[];
   readonly executionResults: readonly ActionResult[];
+  readonly resolutions: readonly AcquisitionResolution[];
 }
 
 export class WaiverManagementError extends Error {
@@ -115,6 +165,7 @@ export class AutonomousWaiverManager {
   readonly #decisionEngine: DecisionEngine;
   readonly #policyEngine: PolicyEngine;
   readonly #executor: FantasyPlatformExecutor;
+  readonly #rosterReader: Pick<FantasyPlatformReader, 'getRoster'>;
   readonly #clock: () => Date;
   readonly #runIdFactory: () => string;
   readonly #decisionIdFactory: () => ReturnType<typeof decisionId>;
@@ -145,6 +196,7 @@ export class AutonomousWaiverManager {
     this.#decisionEngine = options.decisionEngine;
     this.#policyEngine = options.policyEngine;
     this.#executor = options.executor;
+    this.#rosterReader = options.rosterReader;
     this.#clock = options.clock ?? (() => new Date());
     this.#runIdFactory = options.runIdFactory ?? randomUUID;
     this.#decisionIdFactory =
@@ -320,6 +372,7 @@ export class AutonomousWaiverManager {
       mode: 'execute',
     });
     validateWaiverExecutionResults(approved, executionResults, 'execute');
+    const resolutions = await this.#resolve(executionResults);
     return this.#complete({
       id,
       startedAt,
@@ -333,6 +386,105 @@ export class AutonomousWaiverManager {
       scopeIssues,
       preflightResults,
       executionResults,
+      resolutions,
+    });
+  }
+
+  async #resolve(
+    results: readonly ActionResult[],
+  ): Promise<readonly AcquisitionResolution[]> {
+    const executed = results.filter(
+      (result): result is Extract<ActionResult, { status: 'executed' }> =>
+        result.status === 'executed',
+    );
+    const pending = new Map(
+      executed.flatMap((result) =>
+        result.action.type === 'waiver-claim'
+          ? [
+              [
+                result.action.id,
+                {
+                  actionId: result.action.id,
+                  kind: 'pending-waiver' as const,
+                  ...(result.externalReference === undefined
+                    ? {}
+                    : { externalReference: result.externalReference }),
+                },
+              ] as const,
+            ]
+          : [],
+      ),
+    );
+    const immediate = executed.filter(
+      (
+        result,
+      ): result is Extract<ActionResult, { status: 'executed' }> & {
+        readonly action: Extract<
+          FantasyAction,
+          { type: 'add-player' | 'add-drop' }
+        >;
+      } =>
+        result.action.type === 'add-player' ||
+        result.action.type === 'add-drop',
+    );
+    if (immediate.length === 0) return [...pending.values()];
+    let immediateResolutions: ReadonlyMap<ActionId, AcquisitionResolution>;
+    try {
+      const observedRoster = await this.#rosterReader.getRoster(
+        immediate[0]!.action.teamId,
+      );
+      immediateResolutions = new Map(
+        immediate.map((result) => {
+          const issues = acquisitionVerificationIssues(
+            result.action,
+            observedRoster,
+          );
+          return [
+            result.action.id,
+            {
+              actionId: result.action.id,
+              kind: 'immediate' as const,
+              verification:
+                issues.length === 0
+                  ? {
+                      status: 'verified' as const,
+                      observedRoster,
+                      issues: [] as const,
+                    }
+                  : {
+                      status: 'mismatch' as const,
+                      observedRoster,
+                      issues,
+                    },
+            },
+          ] as const;
+        }),
+      );
+    } catch (error) {
+      immediateResolutions = new Map(
+        immediate.map((result) => [
+          result.action.id,
+          {
+            actionId: result.action.id,
+            kind: 'immediate' as const,
+            verification: {
+              status: 'failed' as const,
+              error: {
+                code: 'ROSTER_VERIFICATION_FAILED',
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : 'Unexpected roster verification failure',
+              },
+            },
+          },
+        ]),
+      );
+    }
+    return executed.flatMap(({ action }) => {
+      const resolution =
+        pending.get(action.id) ?? immediateResolutions.get(action.id);
+      return resolution === undefined ? [] : [resolution];
     });
   }
 
@@ -379,6 +531,7 @@ export class AutonomousWaiverManager {
     readonly scopeIssues: readonly WaiverScopeIssue[];
     readonly preflightResults?: readonly ActionResult[];
     readonly executionResults?: readonly ActionResult[];
+    readonly resolutions?: readonly AcquisitionResolution[];
   }): WaiverManagementRun {
     const completedAt = this.#timestamp('completedAt');
     if (Date.parse(completedAt) < Date.parse(input.startedAt)) {
@@ -403,6 +556,7 @@ export class AutonomousWaiverManager {
       scopeIssues: input.scopeIssues,
       preflightResults: input.preflightResults ?? [],
       executionResults: input.executionResults ?? [],
+      resolutions: input.resolutions ?? [],
     };
   }
 
@@ -496,6 +650,33 @@ function sameWaiverAction(
   );
 }
 
+function acquisitionVerificationIssues(
+  action: Extract<FantasyAction, { type: 'add-player' | 'add-drop' }>,
+  observed: Roster,
+): readonly AcquisitionVerificationIssue[] {
+  const issues: AcquisitionVerificationIssue[] = [];
+  if (observed.teamId !== action.teamId) {
+    issues.push({
+      code: 'TEAM_MISMATCH',
+      expectedTeamId: action.teamId,
+      observedTeamId: observed.teamId,
+    });
+  }
+  const playerIds = new Set(observed.entries.map(({ player }) => player.id));
+  const addedPlayerId =
+    action.type === 'add-player' ? action.playerId : action.addPlayerId;
+  if (!playerIds.has(addedPlayerId)) {
+    issues.push({ code: 'ADDED_PLAYER_MISSING', playerId: addedPlayerId });
+  }
+  if (action.type === 'add-drop' && playerIds.has(action.dropPlayerId)) {
+    issues.push({
+      code: 'DROPPED_PLAYER_PRESENT',
+      playerId: action.dropPlayerId,
+    });
+  }
+  return issues;
+}
+
 function waiverExecutionStatus(
   results: readonly ActionResult[],
 ): WaiverManagementStatus {
@@ -505,7 +686,13 @@ function waiverExecutionStatus(
   if (results.some(({ status }) => status === 'failed')) {
     return 'execution-failed';
   }
-  return 'submitted';
+  const executed = results.filter(({ status }) => status === 'executed');
+  const immediate = executed.some(
+    ({ action }) => action.type === 'add-player' || action.type === 'add-drop',
+  );
+  const pending = executed.some(({ action }) => action.type === 'waiver-claim');
+  if (immediate && pending) return 'executed-and-submitted';
+  return immediate ? 'executed' : 'submitted';
 }
 
 function configurationError(message: string, code: string): never {

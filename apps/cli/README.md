@@ -28,7 +28,7 @@ pnpm cli yahoo manage-lineup 449.l.1234 449.l.1234.t.1 3 \
 
 The projection file contains `scoringPeriod`, `observedAt`, `source`, optional `version`, and a `players` array of `{ playerId, points, floor?, ceiling? }`. Snapshot age defaults to five minutes and projection age to thirty minutes; both are configurable with explicit millisecond options. Add `--execute` only after reviewing dry-run output. Execute mode repeats platform dry-run preflight, rechecks freshness, performs the mutation, and reports the subsequent Yahoo lineup read as verified, mismatched, or failed.
 
-Phase 8 uses the same projection envelope for ordered free-agent and waiver upgrades. It defaults to one action, a one-point minimum projected gain, and dry-run mode. Budget leagues require an explicit fixed or percentage strategy; priority leagues omit bids:
+Phase 8 uses the same projection envelope for ranked free-agent and waiver upgrades. It defaults to one action, a one-point minimum projected gain, and dry-run mode. Budget leagues require an explicit fixed or percentage strategy; priority leagues omit bids:
 
 ```sh
 pnpm cli yahoo manage-waivers 449.l.1234 449.l.1234.t.1 3 \
@@ -36,7 +36,7 @@ pnpm cli yahoo manage-waivers 449.l.1234 449.l.1234.t.1 3 \
   --max-waiver-bid 10 --max-waiver-priority 4
 ```
 
-Use `--waivers-only` to exclude immediate free agents and `--max-actions` to allow an ordered claim batch. The manager rejects the whole ordered plan if any action fails policy, preflights every action, and reports successful claims as submitted rather than already resolved.
+Use `--waivers-only` to exclude immediate free agents and `--max-actions` to allow a ranked claim batch. The manager rejects the whole ranked plan if any action fails policy and submits claims in deterministic rank order without claiming that this controls provider resolution order. Successful free-agent actions are verified through a roster re-read, while waiver claims remain explicitly pending.
 
 Yahoo commands read `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, and optionally `YAHOO_REDIRECT_URI` (default `oob`). Initial tokens can be supplied through `YAHOO_ACCESS_TOKEN`, `YAHOO_REFRESH_TOKEN`, and `YAHOO_TOKEN_EXPIRES_AT` as epoch milliseconds or an ISO timestamp.
 

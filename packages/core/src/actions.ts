@@ -39,6 +39,7 @@ export interface WaiverClaimAction extends ActionBase {
   readonly type: 'waiver-claim';
   readonly addPlayerId: PlayerId;
   readonly dropPlayerId?: PlayerId;
+  /** Non-negative integer units in the league's waiver budget. */
   readonly bid?: number;
 }
 

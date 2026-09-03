@@ -341,8 +341,10 @@ function calculateBid(strategy: WaiverBidStrategy, remaining: number): number {
 function validateBidStrategy(strategy: WaiverBidStrategy | undefined): void {
   if (strategy === undefined) return;
   if (strategy.kind === 'fixed') {
-    if (!Number.isFinite(strategy.amount) || strategy.amount < 0) {
-      throw new RangeError('fixed waiver bid must be finite and non-negative');
+    if (!Number.isSafeInteger(strategy.amount) || strategy.amount < 0) {
+      throw new RangeError(
+        'fixed waiver bid must be a non-negative safe integer',
+      );
     }
     return;
   }
@@ -354,8 +356,10 @@ function validateBidStrategy(strategy: WaiverBidStrategy | undefined): void {
     throw new RangeError('waiver bid percentage must be between zero and one');
   }
   for (const value of [strategy.minimum, strategy.maximum]) {
-    if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
-      throw new RangeError('waiver bid bounds must be finite and non-negative');
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new RangeError(
+        'waiver bid bounds must be non-negative safe integers',
+      );
     }
   }
   if (

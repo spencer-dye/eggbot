@@ -727,9 +727,12 @@ function executionContractError(message: string): never {
 }
 
 export {
+  type AcquisitionResolution,
+  type AcquisitionVerificationIssue,
   AutonomousWaiverManager,
   WaiverManagementError,
   type AutonomousWaiverManagerOptions,
+  type ImmediateAcquisitionVerification,
   type WaiverManagementOptions,
   type WaiverManagementRun,
   type WaiverManagementStatus,
