@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "description": "Normalized, integrity-checked league snapshot capture for EggBot",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",

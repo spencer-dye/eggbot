@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "A modular framework for autonomous fantasy football management",
+  "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",

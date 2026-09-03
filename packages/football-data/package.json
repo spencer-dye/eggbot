@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "description": "Validated provider-neutral football intelligence contracts for EggBot",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",

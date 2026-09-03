@@ -39,3 +39,7 @@ The CLI stores Yahoo tokens in a gitignored, owner-only file by default. Live Ya
 reads are opt-in, and normal tests require neither network access nor credentials.
 
 See [the architecture](docs/ARCHITECTURE.md), [domain vocabulary](docs/DOMAIN.md), [operational and deployment guide](docs/OPERATIONS.md), [roadmap](docs/ROADMAP.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
+
+## License
+
+EggBot is available under the [MIT License](LICENSE).
