@@ -7,6 +7,7 @@
   },
   "references": [
     { "path": "../../packages/core" },
+    { "path": "../../packages/football-data" },
     { "path": "../../packages/platform" },
     { "path": "../../packages/yahoo" },
     { "path": "../../packages/agent" },

@@ -24,6 +24,7 @@ import {
   type Lineup,
   type Position,
 } from '@eggbot/core';
+import { footballDataCapabilities } from '@eggbot/football-data';
 import {
   buildYahooWriteRequest,
   YahooFantasyReader,
@@ -74,6 +75,7 @@ async function main(args: readonly string[]): Promise<void> {
         'available-pool-scarcity',
         'roster-risk',
       ],
+      footballDataCapabilities,
       decisionEngine: {
         id: decisionEngine.id,
         version: decisionEngine.version,
@@ -110,7 +112,7 @@ async function main(args: readonly string[]): Promise<void> {
         'budget-aware-bidding',
         'complete-audit-record',
       ],
-      phase: 8,
+      phase: 9,
       writeOperations: 'guarded',
     });
     return;

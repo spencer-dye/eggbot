@@ -5,28 +5,12 @@ import type {
   SnapshotId,
   TeamId,
 } from '@eggbot/core';
+import type { PlayerProjection, ProjectionSet } from '@eggbot/football-data';
 
-export interface PlayerProjection {
-  readonly playerId: PlayerId;
-  readonly points: number;
-  readonly floor?: number;
-  readonly ceiling?: number;
-}
+export type { PlayerProjection, ProjectionSet } from '@eggbot/football-data';
 
-export interface ProjectionSet {
-  readonly scoringPeriod: string;
-  readonly observedAt: string;
-  readonly source: string;
-  readonly version?: string;
-  readonly players: readonly PlayerProjection[];
-}
-
-export interface ProjectionProvenance {
-  readonly scoringPeriod: string;
-  readonly observedAt: string;
-  readonly source: string;
-  readonly version?: string;
-}
+/** Projection source metadata retained for analytics compatibility. */
+export type ProjectionProvenance = Omit<ProjectionSet, 'players'>;
 
 export interface ProjectionCoverage {
   readonly projectedCount: number;

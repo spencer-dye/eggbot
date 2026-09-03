@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 8 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 9 are implemented; later phases remain roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -40,7 +40,7 @@ Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping
 
 ## Phase 9 — External football intelligence
 
-Integrate injuries, projections, depth charts, usage, news, and schedules behind provider-neutral ports.
+Implemented provider-neutral, provenance-bearing injuries, projections, depth charts, usage, news, and professional schedules in `@eggbot/football-data`. Strict public parsers validate adapter output, and a scoped multi-read capture service preserves the best-effort observation window. Projection types moved to their correct owning boundary while `@eggbot/analytics` re-exports them for compatibility. Concrete commercial data providers remain application-selected adapters rather than framework defaults.
 
 ## Phase 10 — Trade support
 

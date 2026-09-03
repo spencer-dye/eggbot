@@ -9,6 +9,14 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **Team** is a fantasy team within a league.
 - **AcquisitionRules** describe provider-neutral waiver-system, budget, period, and acquisition-limit settings; **TeamAcquisitionState** records the currently observed priority, remaining budget, and usage where supplied.
 - **Player** is a football player eligible for one or more positions. Provider identifiers are not player IDs.
+- **FootballDataProvenance** identifies the source, observation time, and optional version of one external football-intelligence data set.
+- **PlayerInjury** records a normalized availability status and optional reported detail or expected return without changing fantasy-platform roster state.
+- **PlayerProjection** is a period-bound expected-points input with optional floor and ceiling. It is external evidence, not an analytic result.
+- **DepthChartEntry** records a player's professional-team position and rank. Its football position label is distinct from fantasy-slot eligibility.
+- **PlayerUsage** records optional count and share facts for a declared scoring period and usage window.
+- **PlayerNewsItem** associates sourced, timestamped news with zero or more EggBot player IDs.
+- **ProfessionalGame** records a scheduled professional matchup and state; it is distinct from a fantasy `Matchup`.
+- **FootballIntelligenceSnapshot** groups validated injuries, projections, depth charts, usage, news, and schedules across an explicit best-effort capture window.
 - **Roster** is the complete set of players controlled by a fantasy team.
 - **Lineup** assigns rostered players to slots for one scoring period.
 - **RosterSlot** defines an active, bench, or reserve place and its eligible positions.
@@ -18,7 +26,7 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **FantasyAction** is inspectable intent to change platform state. It models lineup setting, standalone add and drop, add/drop, and waiver-claim actions without conflating immediate acquisitions with pending claims.
 - **DecisionProposal** is untrusted decision-engine output: rationale and proposed action intents without host-owned decision/action identities or audit timestamps.
 - **FantasyDecision** records a host-assigned decision identifier, timestamp, rationale, and proposed actions. It does not approve or execute them.
-- **DecisionRun** associates a validated `FantasyDecision` with its engine identity/version, exact source snapshot and analytics, managed team, and execution window.
+- **DecisionRun** associates a validated `FantasyDecision` with its engine identity/version, exact source snapshot and analytics, optional exact football-intelligence input, managed team, and execution window.
 - **PolicyEvaluation** records every deterministic approval or rejection for a decision run, with structured rule attribution and conflict context.
 - **PolicyApproval** is the explicitly derived, provenance-bearing subset of actions policy approved for possible execution. It is not proof that a platform will accept them.
 - **LineupManagementRun** is the complete Phase 7 workflow record. It associates one snapshot and exact projection-backed analytics with its decision, policy evaluation, optional approval, platform dry-run results, execution results, post-execution lineup verification, timestamps, scope findings, and terminal status. Executor success and observed-state verification are intentionally separate facts.
@@ -61,6 +69,10 @@ Platform payloads, enum values, and identifiers are external data. An adapter va
 Platform state is observed source data. Analytics are deterministic values derived from that data. Keeping them separate makes snapshots reproducible and calculations independently testable.
 
 `LeagueAnalytics` identifies its source snapshot and retains both exact normalized player projections and their provenance: scoring period, observation time, source, and optional source version. A `ProjectionSet` for a different scoring period is rejected. Player projections are caller-supplied observed inputs, while lineup totals, coverage-qualified matchup margins, best-available comparisons, acquisition-pool scarcity summaries, and roster-risk facts are deterministic derivations. Missing projection coverage remains explicit rather than silently becoming a confident zero estimate.
+
+### Fantasy-platform data versus football intelligence
+
+Fantasy-platform reads describe league ownership, rules, lineups, standings, transactions, and acquisition pools. External football intelligence describes the underlying sport: injuries, expected performance, depth-chart role, usage, news, and professional games. `FootballDataProvider` cannot read or mutate a fantasy roster, and `FantasyPlatformReader` does not become an injury or projection feed. Applications join both through EggBot player IDs and preserve each source's independent observation time.
 
 ### Snapshot coverage and consistency
 

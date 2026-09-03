@@ -2,24 +2,25 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 8 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, and autonomous lineup and waiver orchestration without choosing a league format, model provider, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 9 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, autonomous lineup and waiver orchestration, and external football-intelligence ports without choosing a league format, model provider, football-data vendor, database, scheduler, or deployment environment.
 
 ## Workspace layout
 
-| Workspace             | Responsibility                                             | Direct workspace dependencies                                  |
-| --------------------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
-| `@eggbot/core`        | Stable domain vocabulary, opaque IDs, actions, and results | None                                                           |
-| `@eggbot/platform`    | Provider-neutral read and execution ports                  | `core`                                                         |
-| `@eggbot/yahoo`       | Yahoo OAuth, read transport, validation, and mapping       | `core`, `platform`                                             |
-| `@eggbot/snapshot`    | Normalized multi-read league snapshot capture              | `core`, `platform`                                             |
-| `@eggbot/agent`       | Provider-neutral decision-engine port                      | `core`, `analytics`                                            |
-| `@eggbot/agent-local` | Safe local decision-engine implementations                 | `core`, `agent`                                                |
-| `@eggbot/policy`      | Deterministic approval/rejection boundary                  | `core`, `agent`                                                |
-| `@eggbot/manager`     | Guarded autonomous application workflows                   | `core`, `platform`, `snapshot`, `analytics`, `agent`, `policy` |
-| `@eggbot/analytics`   | Deterministic calculations and analytics port              | `core`                                                         |
-| `@eggbot/storage`     | Persistence port, with no implementation                   | None                                                           |
-| `@eggbot/scheduler`   | Scheduling port, with no implementation                    | None                                                           |
-| `@eggbot/cli`         | Application composition proof                              | Public APIs of all packages                                    |
+| Workspace               | Responsibility                                                | Direct workspace dependencies                                  |
+| ----------------------- | ------------------------------------------------------------- | -------------------------------------------------------------- |
+| `@eggbot/core`          | Stable domain vocabulary, opaque IDs, actions, and results    | None                                                           |
+| `@eggbot/football-data` | External football-intelligence types, validation, and capture | `core`                                                         |
+| `@eggbot/platform`      | Provider-neutral read and execution ports                     | `core`                                                         |
+| `@eggbot/yahoo`         | Yahoo OAuth, read transport, validation, and mapping          | `core`, `platform`                                             |
+| `@eggbot/snapshot`      | Normalized multi-read league snapshot capture                 | `core`, `platform`                                             |
+| `@eggbot/agent`         | Provider-neutral decision-engine port                         | `core`, `analytics`, `football-data`                           |
+| `@eggbot/agent-local`   | Safe local decision-engine implementations                    | `core`, `agent`                                                |
+| `@eggbot/policy`        | Deterministic approval/rejection boundary                     | `core`, `agent`                                                |
+| `@eggbot/manager`       | Guarded autonomous application workflows                      | `core`, `platform`, `snapshot`, `analytics`, `agent`, `policy` |
+| `@eggbot/analytics`     | Deterministic calculations and analytics port                 | `core`, `football-data`                                        |
+| `@eggbot/storage`       | Persistence port, with no implementation                      | None                                                           |
+| `@eggbot/scheduler`     | Scheduling port, with no implementation                       | None                                                           |
+| `@eggbot/cli`           | Application composition proof                                 | Public APIs of all packages                                    |
 
 Packages expose a single explicit root entry point. Deep imports are not part of the public API. TypeScript project references and pnpm workspace links enforce an acyclic build graph.
 
@@ -29,6 +30,7 @@ flowchart TD
   CLI --> M[manager]
   CLI --> P[policy]
   CLI --> N[analytics]
+  CLI --> F[football data]
   CLI --> FP[platform ports]
   CLI --> S[storage port]
   CLI --> J[scheduler port]
@@ -42,12 +44,27 @@ flowchart TD
   LS[snapshot capture] --> FP
   LS --> C
   A --> N
+  A --> F
   A --> C[core]
   P --> A
   P --> C
   N --> C
+  N --> F
+  F --> C
   FP --> C
 ```
+
+## Phase 9 public API changes
+
+External projections were previously modeled inside `@eggbot/analytics`, even though analytics only consumes them and the architecture reserves football intelligence for a separate concern. Phase 9 makes `@eggbot/football-data` the canonical owner of `PlayerProjection` and `ProjectionSet`. `@eggbot/analytics` re-exports both names, so existing consumers do not need to change imports and its analysis API is unchanged.
+
+The new package defines provider-neutral, provenance-bearing sets for injuries, projections, depth charts, usage, player news, and professional schedules. Every set retains source, observation timestamp, and optional source version. Period-sensitive records also carry a scoring period. Football depth-chart positions remain provider-neutral labels rather than being misrepresented as fantasy roster-slot eligibility, and usage shares are normalized to the closed interval from zero to one.
+
+`FootballDataProvider` is a read-only, injectable port with one method per data family. `FootballIntelligenceService` issues those reads concurrently, strictly reparses every returned record, verifies period and optional player/team request scope, and returns a `FootballIntelligenceSnapshot` with its own capture window and explicit `best-effort` consistency. Provider transport failures retain their original classification; malformed normalized output fails closed as `FootballDataValidationError`. The public parsers are also available for concrete adapters to validate at the first external boundary.
+
+`DecisionContext` additively accepts an optional `footballIntelligence` snapshot and `DecisionRun` retains that exact input for auditability. Context validation requires its period to match the league snapshot and its projections—including provenance and ordered values—to match the projections retained by analytics. Existing engines and managers remain compatible when no broader intelligence snapshot is supplied.
+
+No concrete football-data vendor is selected because the roadmap and repository contract require provider independence and supply no vendor, credentials, or licensing terms. A vendor integration belongs in a separate adapter package and can implement the port without changing analytics, decisions, or managers. Applications can pass `snapshot.projections` directly into existing analytics and manager projection seams; injuries, usage, news, depth charts, and schedules remain inspectable inputs for future strategies rather than being silently converted into subjective scores.
 
 ## Phase 8 public API changes
 

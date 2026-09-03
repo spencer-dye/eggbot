@@ -10,6 +10,7 @@ import {
   type LeagueSnapshot,
 } from '@eggbot/core';
 import type { LeagueAnalytics } from '@eggbot/analytics';
+import type { FootballIntelligenceSnapshot } from '@eggbot/football-data';
 
 import {
   createDecisionContext,
@@ -111,12 +112,93 @@ const analytics: LeagueAnalytics = {
   ],
   warnings: [],
 };
+const footballIntelligence: FootballIntelligenceSnapshot = {
+  captureStartedAt: '2026-09-01T11:44:59.000Z',
+  capturedAt: '2026-09-01T11:45:01.000Z',
+  consistency: 'best-effort',
+  scoringPeriod: snapshot.scoringPeriod,
+  provider: { id: 'test-football-data', version: '1.0.0' },
+  injuries: {
+    observedAt: '2026-09-01T11:45:00.000Z',
+    source: 'test-injuries',
+    reports: [],
+  },
+  projections: {
+    ...analytics.projectionProvenance,
+    players: analytics.playerProjections,
+  },
+  depthCharts: {
+    observedAt: '2026-09-01T11:45:00.000Z',
+    source: 'test-depth-charts',
+    entries: [],
+  },
+  usage: {
+    observedAt: '2026-09-01T11:45:00.000Z',
+    source: 'test-usage',
+    scoringPeriod: snapshot.scoringPeriod,
+    players: [],
+  },
+  news: {
+    observedAt: '2026-09-01T11:45:00.000Z',
+    source: 'test-news',
+    items: [],
+  },
+  schedule: {
+    observedAt: '2026-09-01T11:45:00.000Z',
+    source: 'test-schedule',
+    scoringPeriod: snapshot.scoringPeriod,
+    games: [],
+  },
+};
 
 describe('createDecisionContext', () => {
   it('accepts an explicitly managed team in the snapshot', () => {
     expect(
       createDecisionContext({ snapshot, managedTeamId, analytics }),
     ).toMatchObject({ managedTeamId });
+  });
+
+  it('accepts coherent football intelligence and rejects mismatched periods', () => {
+    expect(
+      createDecisionContext({
+        snapshot,
+        managedTeamId,
+        analytics,
+        footballIntelligence,
+      }).footballIntelligence,
+    ).toBe(footballIntelligence);
+    expect(() =>
+      createDecisionContext({
+        snapshot,
+        managedTeamId,
+        analytics,
+        footballIntelligence: {
+          ...footballIntelligence,
+          scoringPeriod: '4',
+        },
+      }),
+    ).toThrowError(
+      'Football intelligence scoring period does not match the league snapshot',
+    );
+  });
+
+  it('rejects intelligence projections that differ from analytics inputs', () => {
+    expect(() =>
+      createDecisionContext({
+        snapshot,
+        managedTeamId,
+        analytics,
+        footballIntelligence: {
+          ...footballIntelligence,
+          projections: {
+            ...footballIntelligence.projections,
+            source: 'different-projections',
+          },
+        },
+      }),
+    ).toThrowError(
+      'Football intelligence projections do not match the analytics inputs',
+    );
   });
 
   it('rejects a managed team outside the snapshot', () => {
@@ -194,7 +276,7 @@ describe('runDecisionEngine', () => {
 
     const result = await runDecisionEngine(
       engine,
-      { snapshot, managedTeamId, analytics },
+      { snapshot, managedTeamId, analytics, footballIntelligence },
       {
         clock: () => {
           const value = times.shift();
@@ -214,6 +296,7 @@ describe('runDecisionEngine', () => {
       startedAt: '2026-09-01T12:01:00.000Z',
       completedAt: '2026-09-01T12:01:00.250Z',
       analytics,
+      footballIntelligence,
       decision: {
         id: 'decision-1',
         createdAt: '2026-09-01T12:01:00.250Z',

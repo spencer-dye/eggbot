@@ -14,6 +14,7 @@
     "@eggbot/agent-local": "workspace:*",
     "@eggbot/analytics": "workspace:*",
     "@eggbot/core": "workspace:*",
+    "@eggbot/football-data": "workspace:*",
     "@eggbot/manager": "workspace:*",
     "@eggbot/platform": "workspace:*",
     "@eggbot/policy": "workspace:*",

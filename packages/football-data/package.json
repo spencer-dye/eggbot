@@ -1,5 +1,5 @@
 {
-  "name": "@eggbot/agent",
+  "name": "@eggbot/football-data",
   "version": "0.0.0",
   "private": false,
   "type": "module",
@@ -20,8 +20,7 @@
     "typecheck": "tsc --noEmit --composite false"
   },
   "dependencies": {
-    "@eggbot/analytics": "workspace:*",
     "@eggbot/core": "workspace:*",
-    "@eggbot/football-data": "workspace:*"
+    "zod": "^4.1.5"
   }
 }

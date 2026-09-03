@@ -1,4 +1,5 @@
 import type { LeagueAnalytics } from '@eggbot/analytics';
+import type { FootballIntelligenceSnapshot } from '@eggbot/football-data';
 import {
   actionId,
   decisionId,
@@ -26,6 +27,7 @@ export interface DecisionContext {
   readonly snapshot: LeagueSnapshot;
   readonly managedTeamId: TeamId;
   readonly analytics: AnalyticsSnapshot;
+  readonly footballIntelligence?: FootballIntelligenceSnapshot;
 }
 
 export type DecisionEngineKind =
@@ -72,6 +74,7 @@ export interface DecisionRun {
   readonly startedAt: string;
   readonly completedAt: string;
   readonly analytics: AnalyticsSnapshot;
+  readonly footballIntelligence?: FootballIntelligenceSnapshot;
   readonly decision: FantasyDecision;
 }
 
@@ -126,6 +129,28 @@ export function createDecisionContext(
     );
   }
   if (
+    context.footballIntelligence !== undefined &&
+    context.footballIntelligence.scoringPeriod !==
+      context.snapshot.scoringPeriod
+  ) {
+    throw new DecisionValidationError(
+      'Football intelligence scoring period does not match the league snapshot',
+      { code: 'FOOTBALL_INTELLIGENCE_PERIOD_MISMATCH' },
+    );
+  }
+  if (
+    context.footballIntelligence !== undefined &&
+    !intelligenceProjectionsMatchAnalytics(
+      context.footballIntelligence,
+      context.analytics,
+    )
+  ) {
+    throw new DecisionValidationError(
+      'Football intelligence projections do not match the analytics inputs',
+      { code: 'FOOTBALL_INTELLIGENCE_PROJECTION_MISMATCH' },
+    );
+  }
+  if (
     !context.analytics.lineupProjections.some(
       ({ teamId }) => teamId === context.managedTeamId,
     ) ||
@@ -177,6 +202,9 @@ export async function runDecisionEngine(
     startedAt: started.toISOString(),
     completedAt,
     analytics: validatedContext.analytics,
+    ...(validatedContext.footballIntelligence === undefined
+      ? {}
+      : { footballIntelligence: validatedContext.footballIntelligence }),
     decision: {
       id,
       createdAt: completedAt,
@@ -184,6 +212,33 @@ export async function runDecisionEngine(
       proposedActions,
     },
   };
+}
+
+function intelligenceProjectionsMatchAnalytics(
+  intelligence: FootballIntelligenceSnapshot,
+  analytics: AnalyticsSnapshot,
+): boolean {
+  const projections = intelligence.projections;
+  const provenance = analytics.projectionProvenance;
+  if (
+    projections.scoringPeriod !== provenance.scoringPeriod ||
+    projections.observedAt !== provenance.observedAt ||
+    projections.source !== provenance.source ||
+    projections.version !== provenance.version ||
+    projections.players.length !== analytics.playerProjections.length
+  ) {
+    return false;
+  }
+  return projections.players.every((projection, index) => {
+    const analytic = analytics.playerProjections[index];
+    return (
+      analytic !== undefined &&
+      projection.playerId === analytic.playerId &&
+      projection.points === analytic.points &&
+      projection.floor === analytic.floor &&
+      projection.ceiling === analytic.ceiling
+    );
+  });
 }
 
 export function validateDecisionProposal(

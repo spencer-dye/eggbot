@@ -5,6 +5,10 @@
     "rootDir": "./src",
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "references": [{ "path": "../core" }, { "path": "../analytics" }],
+  "references": [
+    { "path": "../core" },
+    { "path": "../football-data" },
+    { "path": "../analytics" }
+  ],
   "include": ["src/**/*.ts"]
 }
