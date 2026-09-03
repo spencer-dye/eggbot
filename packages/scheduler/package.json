@@ -18,5 +18,8 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit --composite false"
+  },
+  "dependencies": {
+    "@eggbot/storage": "workspace:*"
   }
 }

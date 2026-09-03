@@ -20,6 +20,10 @@ import {
 
 export interface TradeEvaluationOptions {
   readonly evaluatedAt: string;
+  /** Optional application-specific upper bound; no framework default. */
+  readonly maxValuationAgeMs?: number;
+  /** Optional application-specific upper bound; no framework default. */
+  readonly maxSnapshotAgeMs?: number;
 }
 
 export function evaluateTrade(
@@ -31,7 +35,21 @@ export function evaluateTrade(
   const scenario = parseTradeScenario(scenarioValue);
   const valuations = parseTradeValuationSet(valuationValue);
   const evaluatedAt = validateEvaluationTime(options.evaluatedAt, snapshot);
-  validateProvenance(snapshot, scenario, valuations, evaluatedAt);
+  const snapshotAgeMs =
+    Date.parse(evaluatedAt) - Date.parse(snapshot.capturedAt);
+  const valuationAgeMs =
+    Date.parse(evaluatedAt) - Date.parse(valuations.observedAt);
+  validateAgeLimit('maxSnapshotAgeMs', options.maxSnapshotAgeMs);
+  validateAgeLimit('maxValuationAgeMs', options.maxValuationAgeMs);
+  validateProvenance(
+    snapshot,
+    scenario,
+    valuations,
+    evaluatedAt,
+    snapshotAgeMs,
+    valuationAgeMs,
+    options,
+  );
   const teamById = new Map(
     snapshot.teams.map((team) => [team.team.id, team] as const),
   );
@@ -72,6 +90,8 @@ export function evaluateTrade(
     sourceSnapshotId: snapshot.id,
     leagueId: snapshot.league.id,
     evaluatedAt,
+    snapshotAgeMs,
+    valuationAgeMs,
     scenario,
     valuationProvenance: {
       leagueId: valuations.leagueId,
@@ -125,7 +145,10 @@ function evaluateTeam(
     outgoingValue,
     incomingValue,
     ...(complete
-      ? { netValueChange: incomingValue.knownValue - outgoingValue.knownValue }
+      ? {
+          rawPackageValueDelta:
+            incomingValue.knownValue - outgoingValue.knownValue,
+        }
       : {}),
     rosterSizeBefore,
     rosterSizeAfter,
@@ -185,6 +208,9 @@ function validateProvenance(
   scenario: TradeScenario,
   valuations: TradeValuationSet,
   evaluatedAt: string,
+  snapshotAgeMs: number,
+  valuationAgeMs: number,
+  options: TradeEvaluationOptions,
 ): void {
   if (scenario.leagueId !== snapshot.league.id) {
     invalid('TRADE_SCENARIO_LEAGUE_MISMATCH', scenario.leagueId);
@@ -195,6 +221,18 @@ function validateProvenance(
   if (Date.parse(valuations.observedAt) > Date.parse(evaluatedAt)) {
     invalid('FUTURE_TRADE_VALUATION', valuations.observedAt);
   }
+  if (
+    options.maxSnapshotAgeMs !== undefined &&
+    snapshotAgeMs > options.maxSnapshotAgeMs
+  ) {
+    invalid('STALE_TRADE_SNAPSHOT', snapshot.capturedAt);
+  }
+  if (
+    options.maxValuationAgeMs !== undefined &&
+    valuationAgeMs > options.maxValuationAgeMs
+  ) {
+    invalid('STALE_TRADE_VALUATION', valuations.observedAt);
+  }
   const horizonSeason =
     valuations.horizon.kind === 'rest-of-season'
       ? valuations.horizon.season
@@ -203,6 +241,13 @@ function validateProvenance(
         : undefined;
   if (horizonSeason !== undefined && horizonSeason !== snapshot.league.season) {
     invalid('TRADE_VALUATION_SEASON_MISMATCH', String(horizonSeason));
+  }
+}
+
+function validateAgeLimit(name: string, value: number | undefined): void {
+  if (value === undefined) return;
+  if (!Number.isFinite(value) || value < 0) {
+    invalid('INVALID_TRADE_AGE_LIMIT', name);
   }
 }
 

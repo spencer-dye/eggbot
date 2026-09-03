@@ -741,3 +741,12 @@ export {
   type WaiverScopeIssue,
   type WaiverSnapshotCapturer,
 } from './waivers.js';
+
+export {
+  WaiverReconciler,
+  classifyWaiverTransaction,
+  type WaiverClaimReconciliation,
+  type WaiverReconciliationRun,
+  type WaiverReconcilerOptions,
+  type WaiverTransactionOutcome,
+} from './reconciliation.js';

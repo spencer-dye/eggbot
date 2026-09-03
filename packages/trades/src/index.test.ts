@@ -128,6 +128,8 @@ describe('evaluateTrade', () => {
       sourceSnapshotId: snapshot.id,
       leagueId: league,
       evaluatedAt: options.evaluatedAt,
+      snapshotAgeMs: 2_000,
+      valuationAgeMs: 1_000,
       scenario,
       valuationProvenance: {
         leagueId: league,
@@ -162,7 +164,7 @@ describe('evaluateTrade', () => {
               missingPlayerIds: [],
             },
           },
-          netValueChange: -2,
+          rawPackageValueDelta: -2,
           rosterSizeBefore: 2,
           rosterSizeAfter: 2,
           rosterCapacity: 2,
@@ -190,7 +192,7 @@ describe('evaluateTrade', () => {
               missingPlayerIds: [],
             },
           },
-          netValueChange: 2,
+          rawPackageValueDelta: 2,
           rosterSizeBefore: 2,
           rosterSizeAfter: 2,
           rosterCapacity: 2,
@@ -203,7 +205,7 @@ describe('evaluateTrade', () => {
     expect(evaluation).not.toHaveProperty('approved');
   });
 
-  it('makes incomplete valuation coverage explicit and omits net values', () => {
+  it('makes incomplete valuation coverage explicit and omits raw deltas', () => {
     const evaluation = evaluateTrade(
       snapshot,
       scenario,
@@ -212,8 +214,8 @@ describe('evaluateTrade', () => {
     );
 
     expect(evaluation.valuationCoverage).toBe('partial');
-    expect(evaluation.teams[0]).not.toHaveProperty('netValueChange');
-    expect(evaluation.teams[1]).not.toHaveProperty('netValueChange');
+    expect(evaluation.teams[0]).not.toHaveProperty('rawPackageValueDelta');
+    expect(evaluation.teams[1]).not.toHaveProperty('rawPackageValueDelta');
     expect(evaluation.issues).toEqual([
       {
         code: 'INCOMPLETE_TRADE_VALUATION',
@@ -304,6 +306,59 @@ describe('evaluateTrade', () => {
           options,
         ),
       'FUTURE_TRADE_VALUATION',
+    );
+  });
+
+  it('enforces optional freshness limits and always reports source ages', () => {
+    const evaluation = evaluateTrade(snapshot, scenario, valuations, {
+      ...options,
+      maxSnapshotAgeMs: 2_000,
+      maxValuationAgeMs: 1_000,
+    });
+
+    expect(evaluation.snapshotAgeMs).toBe(2_000);
+    expect(evaluation.valuationAgeMs).toBe(1_000);
+
+    expectTradeError(
+      () =>
+        evaluateTrade(snapshot, scenario, valuations, {
+          ...options,
+          maxSnapshotAgeMs: 1_999,
+        }),
+      'STALE_TRADE_SNAPSHOT',
+    );
+    expectTradeError(
+      () =>
+        evaluateTrade(snapshot, scenario, valuations, {
+          ...options,
+          maxValuationAgeMs: 999,
+        }),
+      'STALE_TRADE_VALUATION',
+    );
+  });
+
+  it('rejects invalid freshness limits', () => {
+    for (const maxValuationAgeMs of [
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expectTradeError(
+        () =>
+          evaluateTrade(snapshot, scenario, valuations, {
+            ...options,
+            maxValuationAgeMs,
+          }),
+        'INVALID_TRADE_AGE_LIMIT',
+      );
+    }
+    expectTradeError(
+      () =>
+        evaluateTrade(snapshot, scenario, valuations, {
+          ...options,
+          maxSnapshotAgeMs: -1,
+        }),
+      'INVALID_TRADE_AGE_LIMIT',
     );
   });
 });

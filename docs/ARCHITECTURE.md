@@ -2,7 +2,7 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 10 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, autonomous lineup and waiver orchestration, external football-intelligence ports, and evaluation-only trade analysis without choosing a league format, model provider, football-data vendor, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 11 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, autonomous lineup and waiver orchestration, external football-intelligence ports, evaluation-only trade analysis, and operational recovery primitives without choosing a league format, model provider, football-data vendor, production database, or cloud platform.
 
 ## Workspace layout
 
@@ -12,15 +12,15 @@ EggBot is a reusable, provider-independent framework for safe fantasy-football a
 | `@eggbot/football-data` | External football-intelligence types, validation, and capture | `core`                                                         |
 | `@eggbot/trades`        | Evaluation-only trade scenarios and deterministic analysis    | `core`                                                         |
 | `@eggbot/platform`      | Provider-neutral read and execution ports                     | `core`                                                         |
-| `@eggbot/yahoo`         | Yahoo OAuth, read transport, validation, and mapping          | `core`, `platform`                                             |
+| `@eggbot/yahoo`         | Yahoo OAuth, reads, guarded writes, and durable journaling    | `core`, `platform`, `storage`                                  |
 | `@eggbot/snapshot`      | Normalized multi-read league snapshot capture                 | `core`, `platform`                                             |
 | `@eggbot/agent`         | Provider-neutral decision-engine port                         | `core`, `analytics`, `football-data`                           |
 | `@eggbot/agent-local`   | Safe local decision-engine implementations                    | `core`, `agent`                                                |
 | `@eggbot/policy`        | Deterministic approval/rejection boundary                     | `core`, `agent`                                                |
 | `@eggbot/manager`       | Guarded autonomous application workflows                      | `core`, `platform`, `snapshot`, `analytics`, `agent`, `policy` |
 | `@eggbot/analytics`     | Deterministic calculations and analytics port                 | `core`, `football-data`                                        |
-| `@eggbot/storage`       | Persistence port, with no implementation                      | None                                                           |
-| `@eggbot/scheduler`     | Scheduling port, with no implementation                       | None                                                           |
+| `@eggbot/storage`       | Persistence ports, atomic files, and immutable audit history  | None                                                           |
+| `@eggbot/scheduler`     | Recoverable timers, durable state, and bounded retries        | `storage`                                                      |
 | `@eggbot/cli`           | Application composition proof                                 | Public APIs of all packages                                    |
 
 Packages expose a single explicit root entry point. Deep imports are not part of the public API. TypeScript project references and pnpm workspace links enforce an acyclic build graph.
@@ -37,6 +37,7 @@ flowchart TD
   CLI --> S[storage port]
   CLI --> J[scheduler port]
   Y[Yahoo adapter] --> FP
+  Y --> S
   AL[local agent implementations] --> A
   M --> LS
   M --> N
@@ -55,7 +56,18 @@ flowchart TD
   F --> C
   T --> C
   FP --> C
+  J --> S
 ```
+
+## Phase 11 operational hardening
+
+Phase 11 adds operational primitives around—not inside—the fantasy decision pipeline. `@eggbot/storage` retains its minimal database-neutral port and adds an `OperationalStorageAdapter` with no-clobber create and prefix scanning. Its concrete `FileStorageAdapter` is a single-host option with hashed keys, owner-only files, atomic replacement, durable synchronization, and corrupt-record rejection. `StorageAuditHistory` appends immutable caller-normalized JSON events and supports bounded filtering; applications remain responsible for redaction and retention.
+
+`@eggbot/scheduler` adds `RecoverableScheduler`, durable `JobState`, and `StorageJobStateStore`. Job functions are registered by applications and are never serialized. A process restart that finds a job marked `running` schedules it again, providing at-least-once recovery; jobs must therefore be idempotent. The scheduler prevents overlap only inside one process. Multi-replica deployment still requires an external scheduler or a distributed lease/leader-election implementation of the public ports.
+
+Retries are bounded, cancellable, and opt-in through an explicit error classifier. This is deliberate: retryable reads and idempotent computations may use backoff, but `execution-uncertain` writes are never retry candidates. `StorageYahooExecutionJournal` makes Yahoo write-ahead records durable, while `YahooFantasyExecutor.reconcile()` resolves a pending intent only from explicit external evidence and performs no provider write. `WaiverReconciler` separately matches submitted claim references to later transaction history and verifies successful outcomes against final roster state; missing, pending, unknown, mismatched, and failed evidence remain distinct.
+
+No managed database, queue, cron service, container, or cloud platform is selected. The framework now has concrete single-host defaults and replaceable ports; `docs/OPERATIONS.md` defines startup, shutdown, recovery, backup, security, health, and multi-replica deployment requirements.
 
 ## Phase 10 public API additions
 
@@ -65,7 +77,7 @@ A `TradeScenario` consists of explicit `PlayerTradeTransfer` legs with source an
 
 `TradeValuationSet` is deliberately distinct from weekly `ProjectionSet`. It declares the target league, source, observation time, optional source version, comparable value unit, and an explicit rest-of-season, dynasty, or custom horizon. Seasonal horizons must match the snapshot season. Values must be finite and non-negative, and future or wrong-league valuations fail closed.
 
-`evaluateTrade` retains the exact normalized player-value inputs for audit and returns per-team incoming/outgoing packages, known totals, exact missing-player coverage, net value change only under complete coverage, and resulting roster size versus known capacity. Capacity violations, incomplete valuation, and relevant snapshot-integrity warnings remain structured evidence. It does not produce an accept/reject recommendation because deterministic facts and policy or human judgment are separate concerns.
+`evaluateTrade` retains the exact normalized player-value inputs for audit, records snapshot and valuation ages, and supports optional application-specific freshness ceilings without imposing universal defaults. It returns per-team incoming/outgoing packages, known totals, exact missing-player coverage, raw package value delta only under complete coverage, and resulting roster size versus known capacity. The raw additive delta explicitly excludes roster-slot opportunity cost, replacement players, and strategic fit. Capacity violations, incomplete valuation, and relevant snapshot-integrity warnings remain structured evidence. It does not produce an accept/reject recommendation because deterministic facts and policy or human judgment are separate concerns.
 
 Phase 10 supports player-only scenarios. Draft picks, waiver budget, conditional assets, keeper costs, trade-offer platform reads, veto/approval rules, expiration, acceptance, rejection, counteroffers, and every mutation remain deferred until their domain and safety requirements are concrete. This is the roadmap's intended evaluation-first boundary, not autonomous trade authorization.
 
@@ -93,7 +105,7 @@ The original domain could express a waiver claim and optional bid, but the snaps
 
 `AutonomousWaiverManager` composes the same snapshot, projection, decision, policy, freshness, contract-validation, and mandatory provider-preflight boundaries used by lineup automation. It permits only add, atomic add/drop, and waiver-claim actions, and rejects the entire ranked plan when any action fails policy so a lower-ranked claim is not silently promoted. Resolution is action-scoped: accepted free-agent adds and add/drops are verified through one authoritative roster re-read, while accepted waiver claims retain their external transaction reference as pending submissions. The re-read is final-state batch verification: it proves the resulting roster contains the expected additions and removals, not every intermediate transition in a multi-action batch. Provider read failures retain available cause code, retryability, and HTTP status evidence.
 
-`WaiverManagementRun.status` describes platform execution only, including `executed-and-submitted` for a mixed immediate-and-waiver batch. Consumers must inspect the separate aggregate `resolutionStatus` and per-action `resolutions` before treating immediate mutations as verified. An execution can therefore be `executed` while its observed resolution is `mismatch` or `failed`; compound resolution statuses retain pending-waiver evidence in mixed batches. Waiver resolution still occurs later and durable reconciliation remains Phase 11 work.
+`WaiverManagementRun.status` describes platform execution only, including `executed-and-submitted` for a mixed immediate-and-waiver batch. Consumers must inspect the separate aggregate `resolutionStatus` and per-action `resolutions` before treating immediate mutations as verified. An execution can therefore be `executed` while its observed resolution is `mismatch` or `failed`; compound resolution statuses retain pending-waiver evidence in mixed batches. Waiver resolution still occurs later and is handled by the Phase 11 reconciliation boundary.
 
 Policy independently validates known waiver-system semantics, required and supported bids, individual and batch remaining budget, and weekly/season acquisition limits. This makes the strategy replaceable without making it a safety boundary.
 
@@ -101,7 +113,7 @@ Policy independently validates known waiver-system semantics, required and suppo
 
 Phase 7 needs to compare every managed roster player when constructing a lineup, but the Phase 4 `LeagueAnalytics` contract retained only projection provenance and aggregates for the current lineup. A decision engine could not inspect bench alternatives, and a `DecisionRun` did not contain enough input data to reproduce an autonomous lineup choice. Phase 7 therefore additively retains a normalized copy of the exact `playerProjections` on `LeagueAnalytics`. Projection acquisition remains caller-supplied; no external football-data provider is selected.
 
-`@eggbot/manager` is the reusable application-service boundary for the end-to-end lineup workflow. It composes snapshot capture, deterministic analytics, a decision engine, policy, and a platform executor without giving write authority to analytics or the agent. Its Phase 7 surface accepts only one lineup action, requires explicit dry-run or execute mode plus positive snapshot and projection age limits, rechecks snapshot freshness immediately before execution, validates custom policy/executor outputs against their inputs, and allows only one in-process run per manager instance. A completed run returns the exact snapshot, analytics, decision run, policy evaluation and approval, execution results, timestamps, and terminal status. Persistence, distributed locking, retries, reconciliation, and production scheduling remain Phase 11 concerns.
+`@eggbot/manager` is the reusable application-service boundary for the end-to-end lineup workflow. It composes snapshot capture, deterministic analytics, a decision engine, policy, and a platform executor without giving write authority to analytics or the agent. Its Phase 7 surface accepts only one lineup action, requires explicit dry-run or execute mode plus positive snapshot and projection age limits, rechecks snapshot freshness immediately before execution, validates custom policy/executor outputs against their inputs, and allows only one in-process run per manager instance. A completed run returns the exact snapshot, analytics, decision run, policy evaluation and approval, execution results, timestamps, and terminal status. Phase 11 operational storage and scheduling compose around this manager boundary rather than coupling infrastructure into it; distributed locking remains application-selected.
 
 Execute mode never calls a platform mutation directly after policy. The manager first invokes the injected executor in `dry-run` mode and requires every result to be a successful dry run, rechecks snapshot freshness after preflight, and only then invokes `execute`. When execution results are all confirmed, the manager re-reads the scoring-period lineup through an injected platform reader and records verification independently as `verified`, `mismatch`, or `failed`; an executor's success report is not silently treated as observed state convergence. Dry-run results, mutation results, and verification evidence remain separate fields in the workflow audit record.
 
@@ -189,7 +201,7 @@ Policy evaluation is action-scoped: every proposed action has its own approved/r
 
 ## Deferred hardening decisions
 
-- Before production game-window automation, add provider-independent scoring-period lineup editability or player-lock state. Phase 7 cannot predict already-started-player locks because neither the normalized snapshot nor the platform read port currently exposes them; Yahoo remains authoritative during mandatory preflight. Distributed leases keyed by league, team, and scoring period remain Phase 11 operational hardening.
+- Before production game-window automation, add provider-independent scoring-period lineup editability or player-lock state. Phase 7 cannot predict already-started-player locks because neither the normalized snapshot nor the platform read port currently exposes them; Yahoo remains authoritative during mandatory preflight. Multi-replica applications must supply distributed leases keyed by league, team, and scoring period.
 - Before autonomous waiver management, add provider-independent waiver system, FAAB balance, priority, and acquisition-limit state based on Phase 3 snapshots; do not mirror Yahoo's full settings payload. Phase 2 deliberately labels dry-runs as local validation until that state exists.
 - Extend lineup preflight with provider lock state when Phase 3 establishes a normalized representation. Phase 2 validates the resulting slot allocation and filled starters but Yahoo remains authoritative for locks.
 - Keep `PlatformReference` and `FantasyGame.platformReference` until a second adapter provides evidence for a shared `GameId` design.

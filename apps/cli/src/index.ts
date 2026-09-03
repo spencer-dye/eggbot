@@ -41,6 +41,8 @@ import {
 } from '@eggbot/yahoo';
 import { LeagueSnapshotService } from '@eggbot/snapshot';
 import { tradeCapabilities } from '@eggbot/trades';
+import { schedulerCapabilities } from '@eggbot/scheduler';
+import { storageCapabilities } from '@eggbot/storage';
 
 import { createFileTokenStore, redactTokens } from './token-file-store.js';
 
@@ -114,7 +116,9 @@ async function main(args: readonly string[]): Promise<void> {
         'complete-audit-record',
       ],
       tradeCapabilities,
-      phase: 10,
+      storageCapabilities,
+      schedulerCapabilities,
+      phase: 11,
       writeOperations: 'guarded',
     });
     return;

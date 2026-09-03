@@ -51,8 +51,12 @@ export interface TradeTeamEvaluation {
   readonly incomingPlayerIds: readonly PlayerId[];
   readonly outgoingValue: TradePackageValue;
   readonly incomingValue: TradePackageValue;
-  /** Omitted unless both incoming and outgoing valuation coverage are complete. */
-  readonly netValueChange?: number;
+  /**
+   * Raw incoming value minus raw outgoing value. Omitted unless both package
+   * valuations are complete. This does not account for roster-slot opportunity
+   * cost, replacement players, or strategic fit.
+   */
+  readonly rawPackageValueDelta?: number;
   readonly rosterSizeBefore: number;
   readonly rosterSizeAfter: number;
   readonly rosterCapacity: number;
@@ -91,6 +95,10 @@ export interface TradeEvaluation {
   readonly sourceSnapshotId: SnapshotId;
   readonly leagueId: LeagueId;
   readonly evaluatedAt: string;
+  /** Age of the source snapshot at evaluation time. */
+  readonly snapshotAgeMs: number;
+  /** Age of the valuation set at evaluation time. */
+  readonly valuationAgeMs: number;
   readonly scenario: TradeScenario;
   readonly valuationProvenance: TradeValuationProvenance;
   /** Exact normalized value inputs retained for audit and reproduction. */

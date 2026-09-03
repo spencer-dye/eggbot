@@ -20,7 +20,7 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **FootballIntelligenceSnapshot** groups validated injuries, projections, depth charts, usage, news, and schedules across an explicit best-effort capture window.
 - **TradeScenario** is an evaluation-only collection of explicit player transfers between teams. It is neither a platform trade offer nor a `FantasyAction`.
 - **TradeValuationSet** supplies league-bound comparable values with source, observation time, unit, and an explicit time horizon; weekly projections are not silently treated as trade values.
-- **TradeEvaluation** records per-team incoming/outgoing value coverage, net change when complete, roster-capacity effects, and structured issues without recommending or approving an outcome.
+- **TradeEvaluation** records source ages, per-team incoming/outgoing value coverage, raw package value delta when complete, roster-capacity effects, and structured issues without recommending or approving an outcome. The raw delta excludes roster-slot opportunity cost, replacement players, and strategic fit.
 - **Roster** is the complete set of players controlled by a fantasy team.
 - **Lineup** assigns rostered players to slots for one scoring period.
 - **RosterSlot** defines an active, bench, or reserve place and its eligible positions.
@@ -36,6 +36,9 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **LineupManagementRun** is the complete Phase 7 workflow record. It associates one snapshot and exact projection-backed analytics with its decision, policy evaluation, optional approval, platform dry-run results, execution results, post-execution lineup verification, timestamps, scope findings, and terminal status. Executor success and observed-state verification are intentionally separate facts.
 - **WaiverManagementRun** is the Phase 8 ranked-acquisition workflow record. Its top-level `status` describes platform execution, while its separate `resolutionStatus` summarizes observed evidence. Immediate free-agent mutations carry per-action final-state batch roster verification, while accepted waiver claims remain pending submissions. A run may therefore be executed but mismatched or failed at verification.
 - **ActionResult** records a local dry run, a durably recorded execution, an uncertain execution outcome, or a failed attempt with a code, message, and retryability signal.
+- **AuditEvent** is an immutable, timestamped, categorized operational record with a subject, outcome, and caller-redacted JSON payload.
+- **JobState** is durable scheduler evidence: trigger, lifecycle status, attempts, next run, timestamps, and the most recent failure. It does not serialize executable job code.
+- **WaiverReconciliationRun** records later transaction-history and final-roster evidence for previously submitted waiver claims without repeating a mutation.
 - **LeagueSnapshot** is a normalized, timestamped observation window containing league-wide state for one scoring period. It groups team rosters and lineups, standings, matchups, acquisition pools, and recent transactions without claiming provider-level atomic consistency.
 
 ## Important distinctions

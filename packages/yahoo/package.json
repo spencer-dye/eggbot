@@ -22,6 +22,7 @@
   "dependencies": {
     "@eggbot/core": "workspace:*",
     "@eggbot/platform": "workspace:*",
+    "@eggbot/storage": "workspace:*",
     "zod": "^4.1.5"
   }
 }

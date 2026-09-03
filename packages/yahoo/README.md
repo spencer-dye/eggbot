@@ -17,7 +17,7 @@ The adapter requests Yahoo's JSON representation and normalizes its array-of-fra
 
 `YahooFantasyExecutor` implements explicit dry-run and execute modes for weekly lineup changes, standalone adds/drops, add/drop transactions, and waiver claims. It validates player ownership so free-agent actions cannot silently become waiver claims and waiver actions cannot become immediate acquisitions. Execute mode additionally requires `allowWrites: true`; dry-run remains the safe default at the CLI boundary.
 
-Action IDs are idempotency keys. The executor writes a pending journal record before mutation. Ambiguous POST outcomes and journal commit failures return `execution-uncertain` and cannot automatically retry. The default journal is in-memory, so production consumers must inject a durable `YahooExecutionJournal` and provide an explicit reconciliation workflow.
+Action IDs are idempotency keys. The executor writes a pending journal record before mutation. Ambiguous POST outcomes and journal commit failures return `execution-uncertain` and cannot automatically retry. The default journal is in-memory; Phase 11 adds `StorageYahooExecutionJournal` for durable single-host operation. `YahooFantasyExecutor.reconcile()` can resolve a pending intent only from explicit independently verified evidence and never calls Yahoo or automatically repeats the mutation.
 
 Yahoo currently documents these write endpoints but does not grant write access to new applications. Dry-runs work with read credentials; live execution requires credentials Yahoo has explicitly authorized for writes.
 

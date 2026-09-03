@@ -11,6 +11,7 @@ import type {
   FantasyPlatformExecutor,
   FantasyPlatformReader,
 } from '@eggbot/platform';
+import type { JsonValue, OperationalStorageAdapter } from '@eggbot/storage';
 
 import {
   YahooActionValidationError,
@@ -57,6 +58,65 @@ export interface YahooExecutionJournal {
   load(actionId: ActionId): Promise<YahooExecutionRecord | undefined>;
   save(record: YahooExecutionRecord): Promise<void>;
 }
+
+export interface StorageYahooExecutionJournalOptions {
+  readonly storage: OperationalStorageAdapter;
+  readonly clock?: () => Date;
+  readonly keyPrefix?: string;
+}
+
+/** Durable single-host journal backed by an operational storage adapter. */
+export class StorageYahooExecutionJournal implements YahooExecutionJournal {
+  readonly #storage: OperationalStorageAdapter;
+  readonly #clock: () => Date;
+  readonly #keyPrefix: string;
+
+  constructor(options: StorageYahooExecutionJournalOptions) {
+    this.#storage = options.storage;
+    this.#clock = options.clock ?? (() => new Date());
+    this.#keyPrefix = options.keyPrefix ?? 'yahoo-execution/v1/';
+    if (this.#keyPrefix.length === 0) {
+      throw new TypeError('Journal key prefix is empty');
+    }
+  }
+
+  async load(actionId: ActionId): Promise<YahooExecutionRecord | undefined> {
+    const record = await this.#storage.get(this.#key(actionId));
+    return record === undefined
+      ? undefined
+      : parseStoredExecutionRecord(record.value, actionId);
+  }
+
+  save(record: YahooExecutionRecord): Promise<void> {
+    validateExecutionRecord(record);
+    const now = this.#clock();
+    if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+      throw new TypeError('Execution journal clock returned an invalid date');
+    }
+    return this.#storage.put({
+      key: this.#key(record.actionId),
+      updatedAt: now.toISOString(),
+      value: JSON.parse(JSON.stringify(record)) as JsonValue,
+    });
+  }
+
+  #key(id: ActionId): string {
+    return `${this.#keyPrefix}${encodeURIComponent(id)}`;
+  }
+}
+
+export type YahooExecutionReconciliation =
+  | {
+      readonly outcome: 'executed';
+      readonly evidence: string;
+      readonly externalReference?: string;
+    }
+  | {
+      readonly outcome: 'failed';
+      readonly evidence: string;
+      readonly code: string;
+      readonly message: string;
+    };
 
 export class InMemoryYahooExecutionJournal implements YahooExecutionJournal {
   readonly #records = new Map<ActionId, YahooExecutionRecord>();
@@ -108,6 +168,62 @@ export class YahooFantasyExecutor implements FantasyPlatformExecutor {
   preview(action: FantasyAction): YahooWriteRequest {
     validateActionShape(action);
     return buildYahooWriteRequest(action);
+  }
+
+  /**
+   * Resolves a durable pending intent from independently verified provider
+   * evidence. This never calls Yahoo and never guesses an ambiguous outcome.
+   */
+  async reconcile(
+    action: FantasyAction,
+    reconciliation: YahooExecutionReconciliation,
+  ): Promise<ActionResult> {
+    validateActionShape(action);
+    if (reconciliation.evidence.trim().length === 0) {
+      throw new YahooActionValidationError(
+        'Reconciliation requires non-empty external evidence',
+        { code: 'RECONCILIATION_EVIDENCE_REQUIRED', actionId: action.id },
+      );
+    }
+    const fingerprint = fingerprintAction(action);
+    const previous = await this.#journal.load(action.id);
+    if (previous === undefined) {
+      throw new YahooActionValidationError(
+        'No execution-journal intent exists for reconciliation',
+        { code: 'RECONCILIATION_RECORD_MISSING', actionId: action.id },
+      );
+    }
+    if (previous.fingerprint !== fingerprint) throw idempotencyConflict(action);
+    if (previous.state !== 'pending') return previous.result;
+
+    const result: ExecutedResult | FailedResult =
+      reconciliation.outcome === 'executed'
+        ? {
+            status: 'executed',
+            action,
+            ...(reconciliation.externalReference === undefined
+              ? {}
+              : { externalReference: reconciliation.externalReference }),
+            warnings: [
+              `Reconciled from external evidence: ${reconciliation.evidence}`,
+            ],
+          }
+        : {
+            status: 'failed',
+            action,
+            error: {
+              code: reconciliation.code,
+              message: reconciliation.message,
+              retryable: false,
+            },
+          };
+    await this.#journal.save(
+      result.status === 'executed'
+        ? { state: 'executed', actionId: action.id, fingerprint, result }
+        : { state: 'failed', actionId: action.id, fingerprint, result },
+    );
+    this.#poisoned.delete(action.id);
+    return result;
   }
 
   async execute(
@@ -515,6 +631,40 @@ function idempotencyConflict(
 
 function fingerprintAction(action: FantasyAction): string {
   return createHash('sha256').update(canonicalJson(action)).digest('hex');
+}
+
+function validateExecutionRecord(record: YahooExecutionRecord): void {
+  if (
+    record.actionId.trim().length === 0 ||
+    record.fingerprint.trim().length === 0
+  ) {
+    throw new TypeError('Execution journal record identity is invalid');
+  }
+  if (record.state === 'pending') return;
+  validateActionShape(record.result.action);
+  if (
+    record.result.action.id !== record.actionId ||
+    record.result.status !== record.state
+  ) {
+    throw new TypeError('Execution journal result does not match its record');
+  }
+}
+
+function parseStoredExecutionRecord(
+  value: JsonValue,
+  expectedActionId: ActionId,
+): YahooExecutionRecord {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Stored execution journal record is invalid');
+  }
+  const candidate = value as unknown as YahooExecutionRecord;
+  validateExecutionRecord(candidate);
+  if (candidate.actionId !== expectedActionId) {
+    throw new TypeError(
+      'Stored execution journal key does not match its action',
+    );
+  }
+  return structuredClone(candidate);
 }
 
 function canonicalJson(value: unknown): string {

@@ -1,6 +1,6 @@
 # `@eggbot/cli`
 
-The default `pnpm cli` command is a credential-free composition smoke test. It reports the safe local decision, policy, Phase 8 manager, Phase 9 football-data, and Phase 10 evaluation-only trade capabilities without invoking any platform, model, or football-data provider. Phase 1 also provides manual Yahoo read commands:
+The default `pnpm cli` command is a credential-free composition smoke test. It reports the safe local decision, policy, manager, football-data, evaluation-only trade, durable storage, and recoverable scheduling capabilities through Phase 11 without invoking any platform, model, or football-data provider. Phase 1 also provides manual Yahoo read commands:
 
 ```sh
 pnpm cli yahoo help
@@ -52,4 +52,4 @@ pnpm cli yahoo add-drop 449.l.1234 449.l.1234.t.1 449.p.10 449.p.20
 pnpm cli yahoo waiver 449.l.1234 449.l.1234.t.1 449.p.10 449.p.20 --bid 7
 ```
 
-A direct live mutation requires all three independent signals: `--execute`, a stable `--action-id`, and `YAHOO_ENABLE_WRITES=1`. Autonomous lineup and waiver execution require `--execute` and `YAHOO_ENABLE_WRITES=1`; managers create host-owned action IDs and independently enforce policy and freshness. Yahoo currently does not grant write access to new applications, so execution also requires credentials Yahoo has already authorized for writes. The CLI's journal is process-local; use an injected durable journal for production transaction retries.
+A direct live mutation requires all three independent signals: `--execute`, a stable `--action-id`, and `YAHOO_ENABLE_WRITES=1`. Autonomous lineup and waiver execution require `--execute` and `YAHOO_ENABLE_WRITES=1`; managers create host-owned action IDs and independently enforce policy and freshness. Yahoo currently does not grant write access to new applications, so execution also requires credentials Yahoo has already authorized for writes. The CLI's direct-write journal is process-local; composed applications should use `StorageYahooExecutionJournal`, audit history, and the reconciliation runbooks in `docs/OPERATIONS.md`. Never automatically retry an uncertain write.

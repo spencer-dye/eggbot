@@ -9,10 +9,12 @@ import {
   type SetLineupAction,
 } from '@eggbot/core';
 import type { FantasyPlatformReader } from '@eggbot/platform';
+import { InMemoryStorageAdapter } from '@eggbot/storage';
 
 import type { YahooPlayerAvailability } from './availability.js';
 import {
   YahooFantasyExecutor,
+  StorageYahooExecutionJournal,
   type YahooExecutionJournal,
 } from './executor.js';
 import { YahooHttpClient } from './http.js';
@@ -217,6 +219,56 @@ describe('YahooFantasyExecutor', () => {
         status: 'execution-uncertain',
         error: { code: 'JOURNAL_OUTCOME_PENDING', retryable: false },
       },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists execution outcomes across executor instances', async () => {
+    const journal = new StorageYahooExecutionJournal({
+      storage: new InMemoryStorageAdapter(),
+      clock: () => new Date('2026-09-02T12:00:00.000Z'),
+    });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(undefined, { status: 201 }));
+    const action = addDropAction();
+    const first = createExecutor(fetchMock, true, 'free-agent', journal);
+    const restarted = createExecutor(fetchMock, true, 'free-agent', journal);
+
+    const original = await first.execute([action], { mode: 'execute' });
+    const replay = await restarted.execute([action], { mode: 'execute' });
+
+    expect(replay).toEqual(original);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires explicit evidence to reconcile an uncertain pending write', async () => {
+    const journal = new StorageYahooExecutionJournal({
+      storage: new InMemoryStorageAdapter(),
+    });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError('connection reset'));
+    const executor = createExecutor(fetchMock, true, 'free-agent', journal);
+    const action = addDropAction();
+    const uncertain = await executor.execute([action], { mode: 'execute' });
+    expect(uncertain[0]?.status).toBe('execution-uncertain');
+
+    await expect(
+      executor.reconcile(action, { outcome: 'executed', evidence: '' }),
+    ).rejects.toMatchObject({ code: 'RECONCILIATION_EVIDENCE_REQUIRED' });
+
+    const reconciled = await executor.reconcile(action, {
+      outcome: 'executed',
+      evidence: 'Yahoo transaction history entry 449.l.123.tr.10',
+      externalReference: 'yahoo:transaction:449.l.123.tr.10',
+    });
+    expect(reconciled).toMatchObject({
+      status: 'executed',
+      externalReference: 'yahoo:transaction:449.l.123.tr.10',
+    });
+    expect(await executor.execute([action], { mode: 'execute' })).toEqual([
+      reconciled,
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

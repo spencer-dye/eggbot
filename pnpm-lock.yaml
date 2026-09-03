@@ -156,7 +156,11 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/scheduler: {}
+  packages/scheduler:
+    dependencies:
+      '@eggbot/storage':
+        specifier: workspace:*
+        version: link:../storage
 
   packages/snapshot:
     dependencies:
@@ -186,6 +190,9 @@ importers:
       '@eggbot/platform':
         specifier: workspace:*
         version: link:../platform
+      '@eggbot/storage':
+        specifier: workspace:*
+        version: link:../storage
       zod:
         specifier: ^4.1.5
         version: 4.5.4

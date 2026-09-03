@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 10 are implemented; Phase 11 remains roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 11 are implemented.
 
 ## Phase 0 — Foundation
 
@@ -36,7 +36,7 @@ Implemented deterministic maximum-projection lineup selection with complete-cove
 
 ## Phase 8 — Waiver management
 
-Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping, projected-gain add/drop selection, ranked claim submission, priority and integer-budget bidding strategies, policy enforcement for acquisition limits and batch budget, and guarded autonomous orchestration with immediate-roster verification versus pending-claim resolution. Pending-claim outcome reconciliation remains Phase 11 work.
+Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping, projected-gain add/drop selection, ranked claim submission, priority and integer-budget bidding strategies, policy enforcement for acquisition limits and batch budget, and guarded autonomous orchestration with immediate-roster verification versus pending-claim resolution. Phase 11 adds later claim reconciliation without changing submission semantics.
 
 ## Phase 9 — External football intelligence
 
@@ -48,4 +48,4 @@ Implemented evaluation-only trade support in `@eggbot/trades`: explicit player-t
 
 ## Phase 11 — Operational hardening
 
-Add production scheduling, audit history, retries, reconciliation, failure recovery, persistence implementations, deployment documentation, and operational guidance.
+Implemented database-neutral operational storage, an atomic single-host file adapter, immutable audit history, recoverable one-time and interval scheduling, durable job state, explicit bounded retry classification, persistent Yahoo execution journals, evidence-driven uncertain-write recovery, and submitted-waiver reconciliation through transaction and roster reads. Added deployment and recovery guidance without selecting a cloud, managed database, queue, or distributed lock provider. Multi-replica coordination remains an application-selected implementation of the public storage and scheduling ports.

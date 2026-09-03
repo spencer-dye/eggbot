@@ -18,10 +18,13 @@ export {
 } from './errors.js';
 export {
   InMemoryYahooExecutionJournal,
+  StorageYahooExecutionJournal,
   YahooFantasyExecutor,
   type YahooExecutionJournal,
+  type YahooExecutionReconciliation,
   type YahooExecutionRecord,
   type YahooFantasyExecutorOptions,
+  type StorageYahooExecutionJournalOptions,
 } from './executor.js';
 export {
   YahooHttpClient,
