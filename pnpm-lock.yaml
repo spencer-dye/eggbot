@@ -35,9 +35,6 @@ importers:
 
   apps/cli:
     dependencies:
-      '@eggbot/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
       '@eggbot/agent-local':
         specifier: workspace:*
         version: link:../../packages/agent-local
@@ -53,9 +50,6 @@ importers:
       '@eggbot/manager':
         specifier: workspace:*
         version: link:../../packages/manager
-      '@eggbot/platform':
-        specifier: workspace:*
-        version: link:../../packages/platform
       '@eggbot/policy':
         specifier: workspace:*
         version: link:../../packages/policy

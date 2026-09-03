@@ -1,6 +1,8 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 11 are implemented.
+Phases 0 through 11 describe the implemented `v0.1.0` scope. This file preserves
+delivery context; it does not imply an automatic Phase 12. Future work is driven by
+concrete integrations and must preserve the architecture and safety boundaries.
 
 ## Phase 0 — Foundation
 
@@ -28,15 +30,15 @@ Implemented a provider-neutral proposal and audited-run boundary with context/ou
 
 ## Phase 6 — Policy engine
 
-Implemented snapshot-bound validation, mandatory legality rules, approved-batch roster-capacity validation, configurable guardrails, structured rejection reasons, cross-action conflict detection, custom-rule composition, runtime-frozen audit configuration, and explicit provenance-bearing execution approval. Phase 7 must configure snapshot freshness before autonomous execution.
+Implemented snapshot-bound validation, mandatory legality rules, approved-batch roster-capacity validation, configurable guardrails, structured rejection reasons, cross-action conflict detection, custom-rule composition, runtime-frozen audit configuration, and explicit provenance-bearing execution approval. Autonomous managers require configured snapshot freshness before execution.
 
 ## Phase 7 — Autonomous lineup management
 
-Implemented deterministic maximum-projection lineup selection with complete-coverage and integrity-warning abstention, reserve preservation, minimum-gain control, exact projection retention, and a provider-neutral one-shot manager. The workflow composes snapshot capture through guarded execution, enforces snapshot/projection freshness and lineup-only scope, mandates successful platform dry-run before mutation, rechecks freshness after preflight, validates policy/executor contracts, verifies confirmed execution through a lineup re-read, prevents overlapping local runs, and returns a complete audit record. Provider lock-state intelligence remains outside the normalized read contract; operational storage and scheduling are supplied by Phase 11, while distributed coordination remains application-selected.
+Implemented deterministic maximum-projection lineup selection with complete-coverage and integrity-warning abstention, reserve preservation, minimum-gain control, exact projection retention, and a provider-neutral one-shot manager. The workflow composes snapshot capture through guarded execution, enforces snapshot/projection freshness and lineup-only scope, mandates successful platform dry-run before mutation, rechecks freshness after preflight, validates policy/executor contracts, verifies confirmed execution through a lineup re-read, prevents overlapping local runs, and returns a complete audit record. Provider lock-state intelligence remains outside the normalized read contract; operational storage and scheduling compose around the manager, while distributed coordination remains application-selected.
 
 ## Phase 8 — Waiver management
 
-Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping, projected-gain add/drop selection, ranked claim submission, priority and integer-budget bidding strategies, policy enforcement for acquisition limits and batch budget, and guarded autonomous orchestration with immediate-roster verification versus pending-claim resolution. Phase 11 adds later claim reconciliation without changing submission semantics.
+Implemented provider-neutral waiver rules and team state, Yahoo boundary mapping, projected-gain add/drop selection, ranked claim submission, priority and integer-budget bidding strategies, policy enforcement for acquisition limits and batch budget, and guarded autonomous orchestration with immediate-roster verification versus pending-claim resolution. Separate later claim reconciliation preserves submission semantics.
 
 ## Phase 9 — External football intelligence
 

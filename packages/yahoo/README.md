@@ -2,7 +2,7 @@
 
 Yahoo Fantasy Sports adapter for EggBot.
 
-Phase 1 reads include:
+Supported reads include:
 
 - OAuth 2.0 authorization URL and code exchange
 - proactive access-token refresh with refresh-token rotation
@@ -23,7 +23,7 @@ Yahoo currently documents these write endpoints but does not grant write access 
 
 ## Live read smoke test
 
-Normal tests use sanitized, credential-free fixtures. To exercise every Phase 1 read against Yahoo, provide the OAuth variables from `.env.example`, set `YAHOO_INTEGRATION=1` and `YAHOO_INTEGRATION_WEEK`, then run:
+Normal tests use sanitized, credential-free fixtures. To exercise every supported read against Yahoo, provide the OAuth variables from `.env.example`, set `YAHOO_INTEGRATION=1` and `YAHOO_INTEGRATION_WEEK`, then run:
 
 ```sh
 pnpm test:integration

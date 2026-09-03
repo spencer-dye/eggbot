@@ -1,6 +1,6 @@
 # Operations and deployment
 
-Phase 11 supplies operational building blocks, not a prescribed hosting stack. Applications own composition, credentials, retention, alerting, and infrastructure. Start with one process and one durable volume; move to external storage, scheduling, and leases before running multiple replicas.
+EggBot supplies operational building blocks, not a prescribed hosting stack. Applications own composition, credentials, retention, alerting, and infrastructure. Start with one process and one durable volume; move to external storage, scheduling, and leases before running multiple replicas.
 
 ## Single-host reference topology
 

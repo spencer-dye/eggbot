@@ -291,7 +291,7 @@ export class AutonomousWaiverManager {
                 actionId: action.id,
                 actionType: action.type,
                 message:
-                  'Phase 8 waiver management permits only acquisitions and atomic replacements',
+                  'Waiver management permits only acquisitions and atomic replacements',
               },
             ]
           : [],
@@ -324,7 +324,7 @@ export class AutonomousWaiverManager {
       });
     }
     const policyApproval = createPolicyApproval(policyEvaluation);
-    if (this.#snapshotIsStale(snapshot, 'preflightAt')) {
+    if (this.#inputsAreStale(snapshot, projectionSet, 'preflightAt')) {
       return this.#complete({
         id,
         startedAt,
@@ -372,7 +372,7 @@ export class AutonomousWaiverManager {
         preflightResults,
       });
     }
-    if (this.#snapshotIsStale(snapshot, 'preExecuteAt')) {
+    if (this.#inputsAreStale(snapshot, projectionSet, 'preExecuteAt')) {
       return this.#complete({
         id,
         startedAt,
@@ -538,10 +538,15 @@ export class AutonomousWaiverManager {
     }
   }
 
-  #snapshotIsStale(snapshot: LeagueSnapshot, resource: string): boolean {
+  #inputsAreStale(
+    snapshot: LeagueSnapshot,
+    projections: ProjectionSet,
+    resource: string,
+  ): boolean {
+    const checked = Date.parse(this.#timestamp(resource));
     return (
-      Date.parse(this.#timestamp(resource)) - Date.parse(snapshot.capturedAt) >
-      this.#maxSnapshotAgeMs
+      checked - Date.parse(snapshot.capturedAt) > this.#maxSnapshotAgeMs ||
+      checked - Date.parse(projections.observedAt) > this.#maxProjectionAgeMs
     );
   }
 

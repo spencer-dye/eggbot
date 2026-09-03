@@ -18,14 +18,24 @@ The framework contains no league-specific rules, real model integration, or sele
 - Node.js 22 or newer
 - pnpm 10
 
-## Development
+## Getting started
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm check
 pnpm cli
 ```
 
-`pnpm check` builds every package, typechecks library and test sources, runs credential-free tests, lints, and checks formatting. Use `pnpm cli yahoo help` to list opt-in Yahoo OAuth, read, snapshot, autonomous lineup, and guarded write commands. The CLI stores Yahoo tokens in a gitignored, owner-only file by default. Autonomous management is a dry run unless `--execute` and the documented write gates are supplied.
+`pnpm check` builds every package, typechecks library and test sources, runs
+credential-free tests, lints, and checks formatting. `pnpm cli` is a credential-free
+smoke test. Next, use `pnpm cli yahoo help` and the
+[Yahoo adapter guide](packages/yahoo/README.md) for OAuth and optional live-read
+setup. Exercise autonomous workflows in their default dry-run mode before considering
+`--execute`; execution also requires the documented Yahoo write gates. For production
+composition, recovery, durable state, and multi-replica limitations, read the
+[operations guide](docs/OPERATIONS.md).
+
+The CLI stores Yahoo tokens in a gitignored, owner-only file by default. Live Yahoo
+reads are opt-in, and normal tests require neither network access nor credentials.
 
 See [the architecture](docs/ARCHITECTURE.md), [domain vocabulary](docs/DOMAIN.md), [operational and deployment guide](docs/OPERATIONS.md), [roadmap](docs/ROADMAP.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).

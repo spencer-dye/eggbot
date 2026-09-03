@@ -154,6 +154,43 @@ describe('AutonomousLineupManager', () => {
     expect(executor.executeMock).toHaveBeenCalledTimes(1);
   });
 
+  it('does not execute when projections expire during preflight', async () => {
+    let now = new Date('2026-09-01T12:01:00.000Z');
+    const execute = vi.fn(
+      (
+        actions: readonly FantasyAction[],
+        executionOptions: { readonly mode: 'dry-run' | 'execute' },
+      ) => {
+        if (executionOptions.mode === 'dry-run') {
+          now = new Date('2026-09-01T12:02:01.000Z');
+        }
+        return Promise.resolve(
+          actions.map((action): ActionResult =>
+            executionOptions.mode === 'dry-run'
+              ? {
+                  status: 'dry-run',
+                  action,
+                  summary: 'Would set lineup',
+                  validation: 'local',
+                }
+              : { status: 'executed', action },
+          ),
+        );
+      },
+    );
+    const manager = createManager({
+      executor: { execute },
+      maxProjectionAgeMs: 2 * 60 * 1_000,
+      clock: () => now,
+    });
+
+    const result = await manager.run(runOptions('execute'));
+
+    expect(result.status).toBe('stale-before-execution');
+    expect(result.preflightResults[0]?.status).toBe('dry-run');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it('requires a successful dry-run before execution and verifies observed state', async () => {
     const executor = executorReturning('executed');
     const lineupReader = {
@@ -220,7 +257,14 @@ describe('AutonomousLineupManager', () => {
     const failed = await createManager({
       executor: executorReturning('executed'),
       lineupReader: {
-        getLineup: () => Promise.reject(new Error('Yahoo read failed')),
+        getLineup: () =>
+          Promise.reject(
+            Object.assign(new Error('Yahoo read failed'), {
+              code: 'YAHOO_HTTP_ERROR',
+              status: 503,
+              retryable: true,
+            }),
+          ),
       },
     }).run(runOptions('execute'));
 
@@ -238,6 +282,9 @@ describe('AutonomousLineupManager', () => {
       error: {
         code: 'LINEUP_VERIFICATION_FAILED',
         message: 'Yahoo read failed',
+        causeCode: 'YAHOO_HTTP_ERROR',
+        providerStatus: 503,
+        retryable: true,
       },
     });
   });

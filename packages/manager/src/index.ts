@@ -124,7 +124,13 @@ export type LineupVerification =
     }
   | {
       readonly status: 'failed';
-      readonly error: { readonly code: string; readonly message: string };
+      readonly error: {
+        readonly code: string;
+        readonly message: string;
+        readonly causeCode?: string;
+        readonly retryable?: boolean;
+        readonly providerStatus?: number;
+      };
     };
 
 export interface LineupManagementRun {
@@ -293,7 +299,7 @@ export class AutonomousLineupManager {
                   actionId: action.id,
                   actionType: action.type,
                   message:
-                    'Phase 7 lineup management permits at most one lineup action',
+                    'Lineup management permits at most one lineup action',
                 },
               ]
             : []
@@ -302,8 +308,7 @@ export class AutonomousLineupManager {
                 code: 'NON_LINEUP_ACTION',
                 actionId: action.id,
                 actionType: action.type,
-                message:
-                  'Phase 7 lineup management cannot execute roster mutations',
+                message: 'Lineup management cannot execute roster mutations',
               },
             ],
     );
@@ -349,11 +354,7 @@ export class AutonomousLineupManager {
     }
     const policyApproval = createPolicyApproval(policyEvaluation);
     const approvedLineupAction = requireApprovedLineupAction(approvedActions);
-    const preflightAt = this.#timestamp('preflightAt');
-    if (
-      Date.parse(preflightAt) - Date.parse(snapshot.capturedAt) >
-      this.#maxSnapshotAgeMs
-    ) {
+    if (this.#inputsAreStale(snapshot, projectionSet, 'preflightAt')) {
       return this.#complete({
         id,
         startedAt,
@@ -404,11 +405,7 @@ export class AutonomousLineupManager {
         verification: { status: 'not-applicable' },
       });
     }
-    const preExecuteAt = this.#timestamp('preExecuteAt');
-    if (
-      Date.parse(preExecuteAt) - Date.parse(snapshot.capturedAt) >
-      this.#maxSnapshotAgeMs
-    ) {
+    if (this.#inputsAreStale(snapshot, projectionSet, 'preExecuteAt')) {
       return this.#complete({
         id,
         startedAt,
@@ -468,14 +465,21 @@ export class AutonomousLineupManager {
         ? { status: 'verified', observedLineup, issues: [] }
         : { status: 'mismatch', observedLineup, issues };
     } catch (error) {
+      const details = verificationError(error);
       return {
         status: 'failed',
         error: {
           code: 'LINEUP_VERIFICATION_FAILED',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Unexpected lineup verification failure',
+          message: details.message,
+          ...(details.causeCode === undefined
+            ? {}
+            : { causeCode: details.causeCode }),
+          ...(details.retryable === undefined
+            ? {}
+            : { retryable: details.retryable }),
+          ...(details.providerStatus === undefined
+            ? {}
+            : { providerStatus: details.providerStatus }),
         },
       };
     }
@@ -533,6 +537,18 @@ export class AutonomousLineupManager {
     }
     return value.toISOString();
   }
+
+  #inputsAreStale(
+    snapshot: LeagueSnapshot,
+    projections: ProjectionSet,
+    resource: string,
+  ): boolean {
+    const checked = Date.parse(this.#timestamp(resource));
+    return (
+      checked - Date.parse(snapshot.capturedAt) > this.#maxSnapshotAgeMs ||
+      checked - Date.parse(projections.observedAt) > this.#maxProjectionAgeMs
+    );
+  }
 }
 
 function validateExecutionResults(
@@ -564,7 +580,7 @@ function requireApprovedLineupAction(
   const action = actions[0];
   if (actions.length !== 1 || action?.type !== 'set-lineup') {
     throw new LineupManagementError(
-      'Policy approved an invalid Phase 7 action set',
+      'Policy approved an invalid lineup-management action set',
       { code: 'POLICY_CONTRACT_VIOLATION', stage: 'policy' },
     );
   }
@@ -717,6 +733,37 @@ function executionStatus(
     return 'execution-failed';
   }
   return mode === 'dry-run' ? 'dry-run' : 'executed';
+}
+
+function verificationError(error: unknown): {
+  readonly message: string;
+  readonly causeCode?: string;
+  readonly retryable?: boolean;
+  readonly providerStatus?: number;
+} {
+  const record =
+    typeof error === 'object' && error !== null
+      ? (error as Record<string, unknown>)
+      : undefined;
+  const causeCode =
+    typeof record?.code === 'string' && record.code.length > 0
+      ? record.code
+      : undefined;
+  const retryable =
+    typeof record?.retryable === 'boolean' ? record.retryable : undefined;
+  const providerStatus =
+    typeof record?.status === 'number' && Number.isSafeInteger(record.status)
+      ? record.status
+      : undefined;
+  return {
+    message:
+      error instanceof Error
+        ? error.message
+        : 'Unexpected lineup verification failure',
+    ...(causeCode === undefined ? {} : { causeCode }),
+    ...(retryable === undefined ? {} : { retryable }),
+    ...(providerStatus === undefined ? {} : { providerStatus }),
+  };
 }
 
 function executionContractError(message: string): never {

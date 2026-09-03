@@ -48,6 +48,15 @@ export class SchedulerConflictError extends Error {
   }
 }
 
+export class SchedulerClosedError extends Error {
+  readonly code = 'SCHEDULER_CLOSED' as const;
+
+  constructor() {
+    super('Scheduler is closed');
+    this.name = 'SchedulerClosedError';
+  }
+}
+
 export type JobRunStatus =
   'scheduled' | 'running' | 'completed' | 'failed' | 'canceled';
 
@@ -113,7 +122,8 @@ export class RecoverableScheduler implements Scheduler {
   readonly #stateStore: JobStateStore;
   readonly #clock: () => Date;
   readonly #onError: (error: unknown, state: JobState) => void | Promise<void>;
-  readonly #scheduling = new Set<string>();
+  readonly #scheduling = new Map<string, Promise<void>>();
+  #closed = false;
   readonly #jobs = new Map<
     string,
     {
@@ -131,6 +141,7 @@ export class RecoverableScheduler implements Scheduler {
   }
 
   async schedule(job: ScheduledJob): Promise<void> {
+    this.#assertOpen();
     const normalizedJob = normalizeJob(job);
     if (
       this.#jobs.has(normalizedJob.id) ||
@@ -141,62 +152,17 @@ export class RecoverableScheduler implements Scheduler {
         { code: 'JOB_ALREADY_SCHEDULED', jobId: normalizedJob.id },
       );
     }
-    this.#scheduling.add(normalizedJob.id);
+    const registration = this.#register(normalizedJob);
+    this.#scheduling.set(normalizedJob.id, registration);
     try {
-      const previous = await this.#stateStore.load(normalizedJob.id);
-      if (
-        previous !== undefined &&
-        !sameTrigger(previous.trigger, normalizedJob.trigger)
-      ) {
-        throw new SchedulerConflictError(
-          `Job ${normalizedJob.id} trigger conflicts with durable state`,
-          { code: 'JOB_TRIGGER_CONFLICT', jobId: normalizedJob.id },
-        );
-      }
-      if (
-        previous?.status === 'canceled' ||
-        (previous?.status === 'completed' &&
-          normalizedJob.trigger.type === 'once')
-      ) {
-        return;
-      }
-
-      const now = this.#timestamp();
-      const nextRunAt = recoveredNextRunAt(
-        normalizedJob.trigger,
-        previous,
-        now,
-      );
-      const state: JobState = {
-        jobId: normalizedJob.id,
-        generation: previous?.generation ?? 0,
-        trigger: normalizedJob.trigger,
-        status: 'scheduled',
-        attempts: previous?.attempts ?? 0,
-        updatedAt: now,
-        nextRunAt,
-        ...(previous?.lastStartedAt === undefined
-          ? {}
-          : { lastStartedAt: previous.lastStartedAt }),
-        ...(previous?.lastCompletedAt === undefined
-          ? {}
-          : { lastCompletedAt: previous.lastCompletedAt }),
-        ...(previous?.lastError === undefined
-          ? {}
-          : { lastError: previous.lastError }),
-      };
-      await this.#stateStore.save(state);
-      this.#jobs.set(normalizedJob.id, {
-        job: normalizedJob,
-        generation: state.generation,
-      });
-      this.#arm(normalizedJob.id, state);
+      await registration;
     } finally {
       this.#scheduling.delete(normalizedJob.id);
     }
   }
 
   async cancel(jobId: string): Promise<boolean> {
+    await this.#scheduling.get(jobId)?.catch(() => undefined);
     const scheduled = this.#jobs.get(jobId);
     const previous = await this.#stateStore.load(jobId);
     if (scheduled === undefined && previous === undefined) return false;
@@ -232,6 +198,7 @@ export class RecoverableScheduler implements Scheduler {
   }
 
   close(): void {
+    this.#closed = true;
     for (const [id, entry] of this.#jobs) {
       if (entry.timer !== undefined) clearTimeout(entry.timer);
       entry.controller?.abort();
@@ -239,7 +206,57 @@ export class RecoverableScheduler implements Scheduler {
     }
   }
 
+  async #register(normalizedJob: ScheduledJob): Promise<void> {
+    const previous = await this.#stateStore.load(normalizedJob.id);
+    this.#assertOpen();
+    if (
+      previous !== undefined &&
+      !sameTrigger(previous.trigger, normalizedJob.trigger)
+    ) {
+      throw new SchedulerConflictError(
+        `Job ${normalizedJob.id} trigger conflicts with durable state`,
+        { code: 'JOB_TRIGGER_CONFLICT', jobId: normalizedJob.id },
+      );
+    }
+    if (
+      previous?.status === 'canceled' ||
+      (previous?.status === 'completed' &&
+        normalizedJob.trigger.type === 'once')
+    ) {
+      return;
+    }
+
+    const now = this.#timestamp();
+    const nextRunAt = recoveredNextRunAt(normalizedJob.trigger, previous, now);
+    const state: JobState = {
+      jobId: normalizedJob.id,
+      generation: previous?.generation ?? 0,
+      trigger: normalizedJob.trigger,
+      status: 'scheduled',
+      attempts: previous?.attempts ?? 0,
+      updatedAt: now,
+      nextRunAt,
+      ...(previous?.lastStartedAt === undefined
+        ? {}
+        : { lastStartedAt: previous.lastStartedAt }),
+      ...(previous?.lastCompletedAt === undefined
+        ? {}
+        : { lastCompletedAt: previous.lastCompletedAt }),
+      ...(previous?.lastError === undefined
+        ? {}
+        : { lastError: previous.lastError }),
+    };
+    await this.#stateStore.save(state);
+    this.#assertOpen();
+    this.#jobs.set(normalizedJob.id, {
+      job: normalizedJob,
+      generation: state.generation,
+    });
+    this.#arm(normalizedJob.id, state);
+  }
+
   #arm(jobId: string, state: JobState): void {
+    if (this.#closed) return;
     const entry = this.#jobs.get(jobId);
     if (entry === undefined || state.nextRunAt === undefined) return;
     const delay = Math.max(0, Date.parse(state.nextRunAt) - this.#now());
@@ -340,6 +357,10 @@ export class RecoverableScheduler implements Scheduler {
     generation: number,
   ): boolean {
     return this.#jobs.get(jobId) === entry && entry.generation === generation;
+  }
+
+  #assertOpen(): void {
+    if (this.#closed) throw new SchedulerClosedError();
   }
 
   #timestamp(): string {

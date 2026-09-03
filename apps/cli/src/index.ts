@@ -118,7 +118,7 @@ async function main(args: readonly string[]): Promise<void> {
       tradeCapabilities,
       storageCapabilities,
       schedulerCapabilities,
-      phase: 11,
+      release: 'v0.1.0',
       writeOperations: 'guarded',
     });
     return;

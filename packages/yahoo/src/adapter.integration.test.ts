@@ -8,7 +8,7 @@ import { YahooOAuthClient, type YahooTokenSet } from './oauth.js';
 const integrationEnabled = process.env.YAHOO_INTEGRATION === '1';
 
 describe.runIf(integrationEnabled)('Yahoo live read integration', () => {
-  it('exercises every Phase 1 read against an explicitly configured league', async () => {
+  it('exercises every supported read against an explicitly configured league', async () => {
     const week = requireEnvironment('YAHOO_INTEGRATION_WEEK');
     const oauth = new YahooOAuthClient({
       config: {

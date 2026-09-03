@@ -68,6 +68,42 @@ describe('AutonomousWaiverManager', () => {
     );
   });
 
+  it('does not execute when projections expire during preflight', async () => {
+    let now = new Date('2026-09-01T12:01:00.000Z');
+    const executor = executorReturning('executed');
+    executor.execute.mockImplementation(
+      (
+        actions: readonly FantasyAction[],
+        executionOptions: { readonly mode: string },
+      ) => {
+        if (executionOptions.mode === 'dry-run') {
+          now = new Date('2026-09-01T12:02:01.000Z');
+        }
+        return Promise.resolve(
+          actions.map((action): ActionResult =>
+            executionOptions.mode === 'dry-run'
+              ? {
+                  status: 'dry-run',
+                  action,
+                  summary: 'Would submit claim',
+                  validation: 'local',
+                }
+              : { status: 'executed', action },
+          ),
+        );
+      },
+    );
+
+    const result = await manager(executor, {
+      maxProjectionAgeMs: 2 * 60 * 1_000,
+      clock: () => now,
+    }).run(options('execute'));
+
+    expect(result.status).toBe('stale-before-execution');
+    expect(result.preflightResults[0]?.status).toBe('dry-run');
+    expect(executor.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('verifies immediate free-agent mutations through a roster re-read', async () => {
     const sourceSnapshot = snapshotWithOpenSpots();
     const observedRoster: Roster = {
@@ -264,6 +300,8 @@ function manager(
     readonly snapshot?: LeagueSnapshot;
     readonly decisionEngine?: DecisionEngine;
     readonly rosterReader?: Pick<FantasyPlatformReader, 'getRoster'>;
+    readonly maxProjectionAgeMs?: number;
+    readonly clock?: () => Date;
   } = {},
 ) {
   const sourceSnapshot = overrides.snapshot ?? snapshot;
@@ -301,8 +339,8 @@ function manager(
     rosterReader: overrides.rosterReader ?? {
       getRoster: () => Promise.resolve(sourceSnapshot.teams[0]!.roster),
     },
-    maxProjectionAgeMs: 5 * 60 * 1_000,
-    clock: () => new Date('2026-09-01T12:01:00.000Z'),
+    maxProjectionAgeMs: overrides.maxProjectionAgeMs ?? 5 * 60 * 1_000,
+    clock: overrides.clock ?? (() => new Date('2026-09-01T12:01:00.000Z')),
     runIdFactory: () => 'run',
     decisionIdFactory: () => decisionId('decision'),
     actionIdFactory: (index) =>

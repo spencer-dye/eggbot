@@ -7,7 +7,11 @@ import {
   StorageJobStateStore,
   runWithRetry,
 } from './index.js';
-import type { RetryExhaustedError, SchedulerConflictError } from './index.js';
+import type {
+  RetryExhaustedError,
+  SchedulerClosedError,
+  SchedulerConflictError,
+} from './index.js';
 
 describe('runWithRetry', () => {
   it('uses bounded exponential backoff for explicitly retryable failures', async () => {
@@ -121,6 +125,85 @@ describe('RecoverableScheduler', () => {
         trigger: { type: 'once', runAt: '2026-09-02T13:00:00.000Z' },
       }),
     );
+    scheduler.close();
+  });
+
+  it('does not arm an in-flight registration after close', async () => {
+    let releaseLoad: (() => void) | undefined;
+    const stateStore = {
+      load: () =>
+        new Promise<undefined>((resolve) => {
+          releaseLoad = () => resolve(undefined);
+        }),
+      save: vi.fn(() => Promise.resolve()),
+      delete: vi.fn(() => Promise.resolve(false)),
+    };
+    const scheduler = new RecoverableScheduler({ stateStore });
+    const run = vi.fn(() => Promise.resolve());
+    const scheduling = scheduler.schedule({
+      id: 'closing',
+      name: 'Closing registration',
+      trigger: { type: 'once', runAt: '2026-09-02T12:00:00.000Z' },
+      run,
+    });
+
+    scheduler.close();
+    releaseLoad?.();
+
+    await expect(scheduling).rejects.toMatchObject({
+      name: 'SchedulerClosedError',
+      code: 'SCHEDULER_CLOSED',
+    } satisfies Partial<SchedulerClosedError>);
+    await expect(
+      scheduler.schedule({
+        id: 'after-close',
+        name: 'After close',
+        trigger: { type: 'once', runAt: '2026-09-02T12:00:00.000Z' },
+        run,
+      }),
+    ).rejects.toMatchObject({ code: 'SCHEDULER_CLOSED' });
+    await vi.runAllTimersAsync();
+    expect(stateStore.save).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('serializes cancellation behind an in-flight registration', async () => {
+    const states = new StorageJobStateStore(new InMemoryStorageAdapter());
+    let releaseLoad: (() => void) | undefined;
+    let firstLoad = true;
+    const stateStore = {
+      load: vi.fn((jobId: string) => {
+        if (!firstLoad) return states.load(jobId);
+        firstLoad = false;
+        return new Promise<Awaited<ReturnType<typeof states.load>>>(
+          (resolve) => {
+            releaseLoad = () => void states.load(jobId).then(resolve);
+          },
+        );
+      }),
+      save: (state: Parameters<typeof states.save>[0]) => states.save(state),
+      delete: (jobId: string) => states.delete(jobId),
+    };
+    const scheduler = new RecoverableScheduler({ stateStore });
+    const run = vi.fn(() => Promise.resolve());
+    const scheduling = scheduler.schedule({
+      id: 'register-cancel',
+      name: 'Register and cancel',
+      trigger: { type: 'once', runAt: '2026-09-02T12:00:00.000Z' },
+      run,
+    });
+    const canceling = scheduler.cancel('register-cancel');
+
+    releaseLoad?.();
+    await scheduling;
+    await expect(canceling).resolves.toBe(true);
+    await vi.runAllTimersAsync();
+
+    expect(run).not.toHaveBeenCalled();
+    expect(await states.load('register-cancel')).toMatchObject({
+      status: 'canceled',
+      generation: 1,
+    });
     scheduler.close();
   });
 

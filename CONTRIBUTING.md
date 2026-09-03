@@ -1,6 +1,6 @@
 # Contributing to EggBot
 
-EggBot accepts focused fixes and improvements that preserve its provider-independent package boundaries. Discuss broad new capabilities before implementation; the Phase 0–11 roadmap defines the current public scope.
+EggBot accepts focused fixes and improvements that preserve its provider-independent package boundaries. Discuss broad new capabilities before implementation; the implemented `v0.1.0` roadmap defines the current public scope.
 
 ## Development
 

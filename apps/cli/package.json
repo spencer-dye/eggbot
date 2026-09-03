@@ -14,13 +14,11 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@eggbot/agent": "workspace:*",
     "@eggbot/agent-local": "workspace:*",
     "@eggbot/analytics": "workspace:*",
     "@eggbot/core": "workspace:*",
     "@eggbot/football-data": "workspace:*",
     "@eggbot/manager": "workspace:*",
-    "@eggbot/platform": "workspace:*",
     "@eggbot/policy": "workspace:*",
     "@eggbot/scheduler": "workspace:*",
     "@eggbot/snapshot": "workspace:*",
