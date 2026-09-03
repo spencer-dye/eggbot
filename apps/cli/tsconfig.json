@@ -17,7 +17,8 @@
     { "path": "../../packages/analytics" },
     { "path": "../../packages/snapshot" },
     { "path": "../../packages/storage" },
-    { "path": "../../packages/scheduler" }
+    { "path": "../../packages/scheduler" },
+    { "path": "../../packages/trades" }
   ],
   "include": ["src/**/*.ts"]
 }

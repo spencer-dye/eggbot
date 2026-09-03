@@ -2,7 +2,7 @@
 
 ## Goals
 
-EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 9 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, autonomous lineup and waiver orchestration, and external football-intelligence ports without choosing a league format, model provider, football-data vendor, database, scheduler, or deployment environment.
+EggBot is a reusable, provider-independent framework for safe fantasy-football automation. Its public boundaries make dependencies explicit, keep decisions inspectable, and reserve side effects for concrete platform adapters. Phases 0 through 10 establish the shared boundaries, Yahoo adapter, guarded execution, normalized snapshots, deterministic analytics, audited decision and policy boundaries, autonomous lineup and waiver orchestration, external football-intelligence ports, and evaluation-only trade analysis without choosing a league format, model provider, football-data vendor, database, scheduler, or deployment environment.
 
 ## Workspace layout
 
@@ -10,6 +10,7 @@ EggBot is a reusable, provider-independent framework for safe fantasy-football a
 | ----------------------- | ------------------------------------------------------------- | -------------------------------------------------------------- |
 | `@eggbot/core`          | Stable domain vocabulary, opaque IDs, actions, and results    | None                                                           |
 | `@eggbot/football-data` | External football-intelligence types, validation, and capture | `core`                                                         |
+| `@eggbot/trades`        | Evaluation-only trade scenarios and deterministic analysis    | `core`                                                         |
 | `@eggbot/platform`      | Provider-neutral read and execution ports                     | `core`                                                         |
 | `@eggbot/yahoo`         | Yahoo OAuth, read transport, validation, and mapping          | `core`, `platform`                                             |
 | `@eggbot/snapshot`      | Normalized multi-read league snapshot capture                 | `core`, `platform`                                             |
@@ -31,6 +32,7 @@ flowchart TD
   CLI --> P[policy]
   CLI --> N[analytics]
   CLI --> F[football data]
+  CLI --> T[trade evaluation]
   CLI --> FP[platform ports]
   CLI --> S[storage port]
   CLI --> J[scheduler port]
@@ -51,8 +53,21 @@ flowchart TD
   N --> C
   N --> F
   F --> C
+  T --> C
   FP --> C
 ```
+
+## Phase 10 public API additions
+
+The existing `FantasyAction` union intentionally has no trade action, and Yahoo exposes no normalized trade-offer or safe trade-mutation boundary. Adding autonomous trade behavior would therefore bypass the architecture's policy and executor safeguards. Phase 10 introduces the independent `@eggbot/trades` package for evaluation only and leaves core actions, platform execution, policy, and managers unchanged.
+
+A `TradeScenario` consists of explicit `PlayerTradeTransfer` legs with source and destination teams. This represents two-team and multi-team scenarios without relying on positional array pairing. Strict parsing rejects empty scenarios, duplicate players, same-team transfers, unknown fields, malformed identifiers, and malformed valuation inputs. Evaluation then verifies league scope, known teams, current ownership, snapshot ownership uniqueness, evaluation time, and valuation provenance before calculating results.
+
+`TradeValuationSet` is deliberately distinct from weekly `ProjectionSet`. It declares the target league, source, observation time, optional source version, comparable value unit, and an explicit rest-of-season, dynasty, or custom horizon. Seasonal horizons must match the snapshot season. Values must be finite and non-negative, and future or wrong-league valuations fail closed.
+
+`evaluateTrade` retains the exact normalized player-value inputs for audit and returns per-team incoming/outgoing packages, known totals, exact missing-player coverage, net value change only under complete coverage, and resulting roster size versus known capacity. Capacity violations, incomplete valuation, and relevant snapshot-integrity warnings remain structured evidence. It does not produce an accept/reject recommendation because deterministic facts and policy or human judgment are separate concerns.
+
+Phase 10 supports player-only scenarios. Draft picks, waiver budget, conditional assets, keeper costs, trade-offer platform reads, veto/approval rules, expiration, acceptance, rejection, counteroffers, and every mutation remain deferred until their domain and safety requirements are concrete. This is the roadmap's intended evaluation-first boundary, not autonomous trade authorization.
 
 ## Phase 9 public API changes
 

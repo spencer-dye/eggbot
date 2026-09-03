@@ -1,0 +1,7 @@
+# `@eggbot/trades`
+
+Provider-neutral, evaluation-only trade analysis for EggBot. The package validates explicit player transfers against a normalized league snapshot and calculates coverage-aware value and roster-size effects from a league-bound, horizon-aware valuation set.
+
+`evaluateTrade` retains the exact normalized value inputs for audit and reports facts for every participating team: incoming and outgoing players, known value totals, missing valuation coverage, net value change when coverage is complete, and resulting roster capacity. It does not recommend acceptance, perform policy approval, construct a `FantasyAction`, contact Yahoo, or execute a trade.
+
+Trade values must declare their league, source, observation time, unit, and horizon. Rest-of-season and dynasty horizons are bound to the snapshot season. Values are abstract comparable units—not weekly lineup projections—and must be finite and non-negative. Draft picks, waiver budget, conditional assets, keeper costs, multi-period forecasting, provider trade-offer reads, and all trade mutations remain outside the Phase 10 surface.

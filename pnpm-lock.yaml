@@ -68,6 +68,9 @@ importers:
       '@eggbot/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@eggbot/trades':
+        specifier: workspace:*
+        version: link:../../packages/trades
       '@eggbot/yahoo':
         specifier: workspace:*
         version: link:../../packages/yahoo
@@ -165,6 +168,15 @@ importers:
         version: link:../platform
 
   packages/storage: {}
+
+  packages/trades:
+    dependencies:
+      '@eggbot/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.1.5
+        version: 4.5.4
 
   packages/yahoo:
     dependencies:

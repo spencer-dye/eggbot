@@ -1,6 +1,6 @@
 # EggBot roadmap
 
-Each phase builds on stable public boundaries. Phases 0 through 9 are implemented; later phases remain roadmap only.
+Each phase builds on stable public boundaries. Phases 0 through 10 are implemented; Phase 11 remains roadmap only.
 
 ## Phase 0 — Foundation
 
@@ -44,7 +44,7 @@ Implemented provider-neutral, provenance-bearing injuries, projections, depth ch
 
 ## Phase 10 — Trade support
 
-Build trade evaluation first. Consider autonomous trade behavior only after sufficient safeguards and approval controls exist.
+Implemented evaluation-only trade support in `@eggbot/trades`: explicit player-transfer scenarios, league- and horizon-bound valuation inputs, strict validation, ownership checks, coverage-aware per-team value deltas, resulting roster-capacity evidence, and source-integrity warnings. No trade action, recommendation, platform mutation, policy approval, or autonomous trade workflow exists; those require additional provider contracts and safeguards.
 
 ## Phase 11 — Operational hardening
 

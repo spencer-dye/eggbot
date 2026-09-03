@@ -21,6 +21,7 @@
     "@eggbot/scheduler": "workspace:*",
     "@eggbot/snapshot": "workspace:*",
     "@eggbot/storage": "workspace:*",
+    "@eggbot/trades": "workspace:*",
     "@eggbot/yahoo": "workspace:*"
   }
 }

@@ -40,6 +40,7 @@ import {
   type YahooTokenSet,
 } from '@eggbot/yahoo';
 import { LeagueSnapshotService } from '@eggbot/snapshot';
+import { tradeCapabilities } from '@eggbot/trades';
 
 import { createFileTokenStore, redactTokens } from './token-file-store.js';
 
@@ -112,7 +113,8 @@ async function main(args: readonly string[]): Promise<void> {
         'budget-aware-bidding',
         'complete-audit-record',
       ],
-      phase: 9,
+      tradeCapabilities,
+      phase: 10,
       writeOperations: 'guarded',
     });
     return;

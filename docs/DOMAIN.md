@@ -18,6 +18,9 @@ EggBot models normalized fantasy-football concepts rather than mirroring any pro
 - **PlayerNewsItem** associates sourced, timestamped news with zero or more EggBot player IDs.
 - **ProfessionalGame** records a scheduled professional matchup and state; it is distinct from a fantasy `Matchup`.
 - **FootballIntelligenceSnapshot** groups validated injuries, projections, depth charts, usage, news, and schedules across an explicit best-effort capture window.
+- **TradeScenario** is an evaluation-only collection of explicit player transfers between teams. It is neither a platform trade offer nor a `FantasyAction`.
+- **TradeValuationSet** supplies league-bound comparable values with source, observation time, unit, and an explicit time horizon; weekly projections are not silently treated as trade values.
+- **TradeEvaluation** records per-team incoming/outgoing value coverage, net change when complete, roster-capacity effects, and structured issues without recommending or approving an outcome.
 - **Roster** is the complete set of players controlled by a fantasy team.
 - **Lineup** assigns rostered players to slots for one scoring period.
 - **RosterSlot** defines an active, bench, or reserve place and its eligible positions.
@@ -56,6 +59,10 @@ Actions inside a decision are proposed. Policy evaluation records an approved or
 Policy distinguishes invalid orchestration context from denied intent. A decision-run/snapshot mismatch is a `PolicyValidationError`; an unrostered drop, unavailable acquisition, illegal lineup, protected player, configured-limit violation, duplicate intent, or cross-action conflict is a structured action rejection. Policy uses snapshot state and therefore cannot replace provider-side validation against newer authoritative state.
 
 An action ID is also its execution idempotency key. Reusing an ID for different action data is an error. Consumers that execute transaction writes must provide durable execution-journal storage. A pending journal intent or `execution-uncertain` result requires explicit provider reconciliation and must never be automatically retried. A dry run is explicitly local validation and does not claim the provider will accept the request.
+
+### Trade scenario versus trade action
+
+A `TradeScenario` is hypothetical data used to calculate facts. Its transfer legs identify which rostered player would move from one team to another, including unambiguous multi-team flows. A `TradeEvaluation` can report incomplete values or capacity problems, but cannot approve, offer, accept, reject, or execute a trade. Phase 10 deliberately adds no trade member to `FantasyAction`; autonomous trade behavior requires future platform, policy, approval, and reconciliation contracts.
 
 ### Platform data versus EggBot domain data
 
